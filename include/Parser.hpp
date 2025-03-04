@@ -1,24 +1,21 @@
 #pragma once
-
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include "Stock.hpp"
 #include "Process.hpp"
 
-class Parser
-{
+class Parser {
 public:
-	explicit Parser(const std::string &filename);
-	bool parse();
+    explicit Parser(const std::string& filename);
+    bool parse();
 
-	const std::vector<Stock> &getStocks() const;
-	const std::vector<Process> &getProcesses() const;
+    const std::vector<Stock>& getStocks() const;
+    const std::vector<Process>& getProcesses() const;
 
 private:
-	std::string _filename;
-	std::vector<Stock> _stocks;
-	std::vector<Process> _processes;
+    std::string filename_;
+    std::vector<Stock> stocks_;
+    std::vector<Process> processes_;
 
-	void parseLine(const std::string &line, int lineNumber);
+    void parseLine(const std::string& line, int lineNumber);
 };

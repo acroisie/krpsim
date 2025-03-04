@@ -1,25 +1,29 @@
 #include "Parser.hpp"
 #include <iostream>
 
+using namespace std;
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage : " << argv[0] << " <file>\n";
+        cerr << "Usage: " << argv[0] << " <filename>" << endl;
         return 1;
     }
-    Parser parser{argv[1]};
+    
+    Parser parser(argv[1]);
     if (parser.parse()) {
-        std::cout << "Stocks lus :\n";
-        for (const auto& stock : parser.getStocks())
-            std::cout << "  " << stock.name << " => " << stock.quantity << "\n";
-        std::cout << "Processus lus :\n";
+        cout << endl << "Stocks :" << endl;
+        for (const auto& stock : parser.getStocks()) {
+            cout << "  " << stock.name << " => " << stock.quantity << endl;
+        }
+        cout << endl << "Process :" << endl;
         for (const auto& proc : parser.getProcesses()) {
-            std::cout << "  " << proc.name << " (cycle: " << proc.cycleAmount << ")\n";
-            std::cout << "    Inputs:\n";
+            cout << "  " << proc.name << " (cycle: " << proc.nbCycle << ")" << endl;
+            cout << "    Inputs:" << endl;
             for (const auto& [res, qty] : proc.inputs)
-                std::cout << "      " << res << " : " << qty << "\n";
-            std::cout << "    Outputs:\n";
+                cout << "      " << res << " : " << qty << endl;
+            cout << "    Outputs:" << endl;
             for (const auto& [res, qty] : proc.outputs)
-                std::cout << "      " << res << " : " << qty << "\n";
+                cout << "      " << res << " : " << qty << endl;
         }
     }
     return 0;

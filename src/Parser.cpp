@@ -1,249 +1,163 @@
 #include "Parser.hpp"
-#include "Stock.hpp"
-#include "Process.hpp"
-#include <iostream>
 #include <fstream>
-#include <stdexcept>
-#include <string>
+#include <iostream>
 #include <sstream>
+#include <stdexcept>
+#include <cctype>
 
-class LineParser
-{
+using namespace std;
+
+class Lexer {
 public:
-	explicit LineParser(const std::string &input) : _input(input), _pos(0) {}
+    explicit Lexer(const string& input) : input_(input), pos_(0) {}
 
-	void skipWhithespace()
-	{
-		while (_pos < _input.size() && std::isspace(_input[_pos]))
-		{
-			++_pos;
-		}
-	}
+    void skipWhitespace() {
+        while (pos_ < input_.size() && isspace(input_[pos_]))
+            ++pos_;
+    }
 
-	char peek()
-	{
-		skipWhithespace();
-		return _pos < _input.size() ? _input[_pos] : '\0';
-	}
+    char peek() {
+        skipWhitespace();
+        return (pos_ < input_.size()) ? input_[pos_] : '\0';
+    }
 
-	void expect(char c)
-	{
-		skipWhithespace();
-		if (peek() != c)
-		{
-			throw std::runtime_error("Unexpected character");
-		}
-		++_pos;
-	}
+    void expect(char c) {
+        skipWhitespace();
+        if (peek() != c) {
+            ostringstream oss;
+            throw runtime_error(oss.str());
+        }
+        ++pos_;
+    }
 
-	bool match(char c)
-	{
-		skipWhithespace();
-		if (peek() == c)
-		{
-			++_pos;
-			return true;
-		}
-		return false;
-	}
+    bool match(char c) {
+        skipWhitespace();
+        if (peek() == c) { ++pos_; return true; }
+        return false;
+    }
 
-	std::string parseIdentifier()
-	{
-		skipWhithespace();
-		size_t start = _pos;
-		while (_pos < _input.size() && (std::isalnum(_input[_pos]) || _input[_pos] == '_' || _input[_pos] == '-'))
-		{
-			++_pos;
-		}
-		if (start == _pos)
-		{
-			throw std::runtime_error("Expected identifier");
-		}
-		return _input.substr(start, _pos - start);
-	}
+    string nextIdentifier() {
+        skipWhitespace();
+        size_t start = pos_;
+        while (pos_ < input_.size() && (isalnum(input_[pos_]) || input_[pos_] == '_' || input_[pos_] == '-'))
+            ++pos_;
+        if (start == pos_)
+            throw runtime_error("Expecting identifier at position " + to_string(pos_));
+        return input_.substr(start, pos_ - start);
+    }
 
-	int parseInteger()
-	{
-		skipWhithespace();
-		size_t start = _pos;
-		if (_pos < _input.size() && (_input[_pos] == '+' || _input[_pos] == '-'))
-		{
-			++_pos;
-		}
-		while (_pos < _input.size() && std::isdigit(_input[_pos]))
-		{
-			++_pos;
-		}
-		if (start == _pos)
-		{
-			throw std::runtime_error("Expected integer");
-		}
-		try
-		{
-			return std::stoi(_input.substr(start, _pos - start));
-		}
-		catch (const std::exception &e)
-		{
-			std::cerr << e.what() << std::endl;
-		}
-
-		return std::stoi(_input.substr(start, _pos - start));
-	}
-
-	bool eof() const
-	{
-		return _pos >= _input.size();
-	}
+    int nextInteger() {
+        skipWhitespace();
+        size_t start = pos_;
+        if (pos_ < input_.size() && (input_[pos_] == '-' || input_[pos_] == '+'))
+            ++pos_;
+        while (pos_ < input_.size() && isdigit(input_[pos_]))
+            ++pos_;
+        if (start == pos_)
+            throw runtime_error("Expecting integer at position " + to_string(pos_));
+        try {
+            return stoi(input_.substr(start, pos_ - start));
+        } catch (...) {
+            throw runtime_error("Invalid format for integer at position " + to_string(pos_));
+        }
+    }
 
 private:
-	const std::string &_input;
-	size_t _pos;
+    const string& input_;
+    size_t pos_;
 };
 
-std::unordered_map<std::string, int> parseResourceList(LineParser &parser)
-{
-	std::unordered_map<std::string, int> resources;
-	while (parser.eof() == false)
-	{
-		parser.skipWhithespace();
-		if (parser.peek() == ')')
-		{
-			break;
-		}
-		std::string resource = parser.parseIdentifier();
-		parser.skipWhithespace();
-		parser.expect(':');
-		parser.skipWhithespace();
-		int amount = parser.parseInteger();
-		resources[resource] = amount;
-		parser.skipWhithespace();
-
-		if (parser.match(';'))
-		{
-			break;
-		}
-	}
-	return resources;
+static unordered_map<string, int> parseResourceList(Lexer& lex) {
+    unordered_map<string, int> resources;
+    while (true) {
+        string name = lex.nextIdentifier();
+        lex.expect(':');
+        int quantity = lex.nextInteger();
+        resources[name] = quantity;
+        if (!lex.match(';'))
+            break;
+    }
+    return resources;
 }
 
-std::vector<std::string> parseOptimizeLine(LineParser &parser)
-{
-	std::vector<std::string> optimize;
-	while (parser.eof() == false)
-	{
-		parser.skipWhithespace();
-		if (parser.peek() == ')')
-		{
-			break;
-		}
-		optimize.push_back(parser.parseIdentifier());
-		parser.skipWhithespace();
-		if (parser.match(';'))
-		{
-			break;
-		}
-	}
-	return optimize;
+static vector<string> parseOptimizeList(Lexer& lex) {
+    vector<string> optimizeList;
+    while (true) {
+        optimizeList.push_back(lex.nextIdentifier());
+        if (!lex.match(';'))
+            break;
+    }
+    return optimizeList;
 }
 
-Parser::Parser(const std::string &filename) : _filename(filename) {}
+Parser::Parser(const string& filename) : filename_(filename) {}
 
-bool Parser::parse()
-{
-	std::ifstream file(_filename);
-	if (!file)
-	{
-		std::cerr << "Error: could not open file " << _filename << std::endl;
-		return false;
-	}
-	std::string line;
-	int lineNumber = 0;
-
-	while (std::getline(file, line))
-	{
-		++lineNumber;
-		std::istringstream stream(line);
-		std::string trimmed;
-		std::getline(stream, trimmed);
-		std::string temp = trimmed;
-		size_t pos = temp.find_first_not_of(" \t");
-		if (pos == std::string::npos || temp[pos] == '#')
-		{
-			continue;
-		}
-		try
-		{
-			parseLine(trimmed, lineNumber);
-		}
-		catch (const std::exception &e)
-		{
-			std::cerr << "Error in line " << lineNumber << ": " << e.what() << std::endl;
-			return false;
-		}
-	}
-	return true;
+bool Parser::parse() {
+    ifstream file(filename_);
+    if (!file) {
+        cerr << "Error: could not open file " << filename_ << endl;
+        return false;
+    }
+    string line;
+    int lineNumber = 0;
+    while (getline(file, line)) {
+        ++lineNumber;
+        string trimmed = line;
+        size_t pos = trimmed.find_first_not_of(" \t");
+        if (pos == string::npos || trimmed[pos] == '#')
+            continue;
+        try {
+            parseLine(trimmed, lineNumber);
+        } catch (const exception& e) {
+            cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
+        }
+    }
+    return true;
 }
 
-const std::vector<Stock> &Parser::getStocks() const
-{
-	return _stocks;
+const vector<Stock>& Parser::getStocks() const {
+    return stocks_;
 }
 
-const std::vector<Process> &Parser::getProcesses() const
-{
-	return _processes;
+const vector<Process>& Parser::getProcesses() const {
+    return processes_;
 }
 
-void Parser::parseLine(const std::string &line, int lineNumber)
-{
-	LineParser parser(line);
-	parser.skipWhithespace();
-
-	std::string firstToken = parser.parseIdentifier();
-
-	if (firstToken == "optimize")
-	{
-		parser.skipWhithespace();
-		parser.expect(':');
-		parser.skipWhithespace();
-		parser.expect('(');
-
-		auto optimize = parseOptimizeLine(parser);
-
-		parser.expect(')');
-	}
-	else
-	{
-		parser.skipWhithespace();
-		parser.expect(':');
-		parser.skipWhithespace();
-
-		if (parser.peek() == '(')
-		{
-			Process process;
-			process.name = firstToken;
-			parser.expect('(');
-			process.inputs = parseResourceList(parser);
-			parser.expect(')');
-			parser.skipWhithespace();
-			parser.expect(':');
-			parser.skipWhithespace();
-			parser.expect('(');
-			process.outputs = parseResourceList(parser);
-			parser.expect(')');
-			parser.skipWhithespace();
-			parser.expect(':');
-			parser.skipWhithespace();
-			process.cycleAmount = parser.parseInteger();
-			_processes.push_back(process);
-		}
-		else
-		{
-			Stock stock;
-			stock.name = firstToken;
-			parser.expect('(');
-			stock.quantity = parser.parseInteger();
-			parser.expect(')');
-			_stocks.push_back(stock);
-		}
-	}
+void Parser::parseLine(const string& line, int lineNumber) {
+    Lexer lex(line);
+    string firstToken = lex.nextIdentifier();
+    
+    if (firstToken == "optimize") {
+        lex.expect(':');
+        lex.expect('(');
+        auto optList = parseOptimizeList(lex);
+        lex.expect(')');
+        cout << "Optimize: " << lineNumber << endl;
+        for (const auto& token : optList)
+            cout << token << " ";
+        cout << endl;;
+        return;
+    }
+    
+    lex.expect(':');
+    
+    if (lex.peek() == '(') {
+        Process proc;
+        proc.name = firstToken;
+        lex.expect('(');
+        proc.inputs = parseResourceList(lex);
+        lex.expect(')');
+        lex.expect(':');
+        lex.expect('(');
+        proc.outputs = parseResourceList(lex);
+        lex.expect(')');
+        lex.expect(':');
+        proc.nbCycle = lex.nextInteger();
+        processes_.push_back(proc);
+    } else {
+        Stock stock;
+        stock.name = firstToken;
+        stock.quantity = lex.nextInteger();
+        stocks_.push_back(stock);
+    }
+}
