@@ -12,12 +12,13 @@ public:
     const std::vector<Stock>& getStocks() const;
     const std::vector<Process>& getProcesses() const;
 
-private:
+    private:
     std::string filename_;
     std::vector<Stock> stocks_;
     std::vector<Process> processes_;
     bool optimizeFound_;
- // New flag for strict error control on optimize lines
 
     void parseLine(const std::string& line, int lineNumber);
+    std::unordered_map<std::string, int> parseResourceList(class Lexer &lex);
+    std::vector<std::string> parseOptimizeList(class Lexer &lex);
 };
