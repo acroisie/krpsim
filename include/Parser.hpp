@@ -9,7 +9,7 @@
 class Parser
 {
 public:
-	Parser(const std::string &filename);
+	explicit Parser(const std::string &filename);
 	bool parse();
 
 	const std::vector<Stock> &getStocks() const;
@@ -20,8 +20,5 @@ private:
 	std::vector<Stock> _stocks;
 	std::vector<Process> _processes;
 
-	void parseStock(const std::string &line);
-	void parseProcess(const std::string &line);
-	void parseResources(const std::string &token, std::unordered_map<std::string, int> &resources);
-	void parseOptimization(const std::string &line);
+	void parseLine(const std::string &line, int lineNumber);
 };
