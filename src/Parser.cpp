@@ -10,7 +10,7 @@
 
 using namespace std;
 
-static unordered_map<string, int> parseResourceList(Lexer& lex) {
+unordered_map<string, int> Parser::parseResourceList(Lexer &lex) {
     unordered_map<string, int> resources;
     while (true) {
         string name = lex.nextIdentifier();
@@ -23,7 +23,7 @@ static unordered_map<string, int> parseResourceList(Lexer& lex) {
     return resources;
 }
 
-static vector<string> parseOptimizeList(Lexer& lex) {
+vector<string> Parser::parseOptimizeList(Lexer &lex) {
     vector<string> optimizeList;
     while (true) {
         optimizeList.push_back(lex.nextIdentifier());
