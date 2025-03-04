@@ -17,6 +17,7 @@ private:
     std::vector<Stock> stocks_;
     std::vector<Process> processes_;
     bool optimizeFound_;
+ // New flag for strict error control on optimize lines
 
     void parseLine(const std::string& line, int lineNumber);
 };
