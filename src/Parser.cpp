@@ -46,11 +46,10 @@ bool Parser::parse() {
     try {
         while (getline(file, line)) {
             ++lineNumber;
-            string trimmed = line;
-            size_t pos = trimmed.find_first_not_of(" \t");
-            if (pos == string::npos || trimmed[pos] == '#')
+            size_t pos = line.find_first_not_of(" \t");
+            if (pos == string::npos || line[pos] == '#')
                 continue;
-            parseLine(trimmed, lineNumber);
+            parseLine(line, lineNumber);
         }
         if (processes_.empty())
             throw runtime_error("No process defined in file.");
