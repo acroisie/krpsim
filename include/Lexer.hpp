@@ -10,6 +10,7 @@ public:
     bool match(char c);
     std::string nextIdentifier();
     int nextInteger();
+
 private:
     const std::string& input_;
     size_t pos_;
