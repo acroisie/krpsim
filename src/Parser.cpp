@@ -25,6 +25,7 @@ public:
         skipWhitespace();
         if (peek() != c) {
             ostringstream oss;
+            oss << "Expected '" << c << "' at position " << pos_;
             throw runtime_error(oss.str());
         }
         ++pos_;
@@ -49,8 +50,8 @@ public:
     int nextInteger() {
         skipWhitespace();
         size_t start = pos_;
-        if (pos_ < input_.size() && (input_[pos_] == '-' || input_[pos_] == '+'))
-            ++pos_;
+        if (!isdigit(input_[pos_]))
+            throw runtime_error("Expecting integer at position " + to_string(pos_));
         while (pos_ < input_.size() && isdigit(input_[pos_]))
             ++pos_;
         if (start == pos_)
@@ -90,7 +91,7 @@ static vector<string> parseOptimizeList(Lexer& lex) {
     return optimizeList;
 }
 
-Parser::Parser(const string& filename) : filename_(filename) {}
+Parser::Parser(const string& filename) : filename_(filename), optimizeFound_(false) {}
 
 bool Parser::parse() {
     ifstream file(filename_);
@@ -100,17 +101,20 @@ bool Parser::parse() {
     }
     string line;
     int lineNumber = 0;
-    while (getline(file, line)) {
-        ++lineNumber;
-        string trimmed = line;
-        size_t pos = trimmed.find_first_not_of(" \t");
-        if (pos == string::npos || trimmed[pos] == '#')
-            continue;
-        try {
+    try {
+        while (getline(file, line)) {
+            ++lineNumber;
+            string trimmed = line;
+            size_t pos = trimmed.find_first_not_of(" \t");
+            if (pos == string::npos || trimmed[pos] == '#')
+                continue;
             parseLine(trimmed, lineNumber);
-        } catch (const exception& e) {
-            cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
         }
+        if (processes_.empty())
+            throw runtime_error("No process defined in file.");
+    } catch (const exception& e) {
+        cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
+        return false;
     }
     return true;
 }
@@ -128,6 +132,10 @@ void Parser::parseLine(const string& line, int lineNumber) {
     string firstToken = lex.nextIdentifier();
     
     if (firstToken == "optimize") {
+        if (optimizeFound_) {
+            throw runtime_error("Multiple optimize lines found.");
+        }
+        optimizeFound_ = true;
         lex.expect(':');
         lex.expect('(');
         auto optList = parseOptimizeList(lex);
@@ -135,7 +143,7 @@ void Parser::parseLine(const string& line, int lineNumber) {
         cout << "Optimize: " << lineNumber << endl;
         for (const auto& token : optList)
             cout << token << " ";
-        cout << endl;;
+        cout << endl;
         return;
     }
     

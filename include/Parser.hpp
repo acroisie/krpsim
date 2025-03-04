@@ -16,6 +16,7 @@ private:
     std::string filename_;
     std::vector<Stock> stocks_;
     std::vector<Process> processes_;
+    bool optimizeFound_;
 
     void parseLine(const std::string& line, int lineNumber);
 };
