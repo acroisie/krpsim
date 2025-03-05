@@ -35,7 +35,7 @@ vector<string> Parser::parseOptimizeList(Lexer &lex) {
 
 Parser::Parser(const string& filename) : filename_(filename), optimizeFound_(false) {}
 
-bool Parser::parse() {
+bool Parser::parse(Config& config) {
     ifstream file(filename_);
     if (!file) {
         cerr << "Error: could not open file " << filename_ << endl;
@@ -49,9 +49,9 @@ bool Parser::parse() {
             size_t pos = line.find_first_not_of(" \t");
             if (pos == string::npos || line[pos] == '#')
                 continue;
-            parseLine(line, lineNumber);
+            parseLine(line, config);
         }
-        if (processes_.empty())
+        if (config.getProcesses().empty())
             throw runtime_error("No process defined in file.");
     } catch (const exception& e) {
         cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
@@ -60,15 +60,7 @@ bool Parser::parse() {
     return true;
 }
 
-const vector<Stock>& Parser::getStocks() const {
-    return stocks_;
-}
-
-const vector<Process>& Parser::getProcesses() const {
-    return processes_;
-}
-
-void Parser::parseLine(const string& line, int lineNumber) {
+void Parser::parseLine(const string& line, Config& config) {
     Lexer lex(line);
     string firstToken = lex.nextIdentifier();
     
@@ -80,10 +72,7 @@ void Parser::parseLine(const string& line, int lineNumber) {
         lex.expect('(');
         auto optList = parseOptimizeList(lex);
         lex.expect(')');
-        cout << "Optimize: " << lineNumber << endl;
-        for (const auto& token : optList)
-            cout << token << " ";
-        cout << endl;
+        config.setOptimizeGoal(optList);
         return;
     }
     
@@ -101,11 +90,11 @@ void Parser::parseLine(const string& line, int lineNumber) {
         lex.expect(')');
         lex.expect(':');
         proc.nbCycle = lex.nextInteger();
-        processes_.push_back(proc);
+        config.addProcess(proc);
     } else {
         Stock stock;
         stock.name = firstToken;
         stock.quantity = lex.nextInteger();
-        stocks_.push_back(stock);
+        config.addStock(stock);
     }
 }
