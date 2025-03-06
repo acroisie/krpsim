@@ -1,36 +1,22 @@
 #include "Parser.hpp"
 #include "Config.hpp"
+#include "ProcessManager.hpp"
 #include <iostream>
 
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <filename>" << " " << "<delay>"<< endl;
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <filename> <delay>" << std::endl;
         return 1;
     }
     
     Parser parser(argv[1]);
     Config config;
     if (parser.parse(config)) {
-        cout << endl << "Stocks :" << endl;
-        for (const auto& stock : config.getStocks()) {
-            cout << "  " << stock.name << " => " << stock.quantity << endl;
-        }
-        cout << endl << "Process :" << endl;
-        for (const auto& proc : config.getProcesses()) {
-            cout << "  " << proc.name << " (cycle: " << proc.nbCycle << ")" << endl;
-            cout << "    Inputs:" << endl;
-            for (const auto& [res, qty] : proc.inputs)
-                cout << "      " << res << " : " << qty << endl;
-            cout << "    Outputs:" << endl;
-            for (const auto& [res, qty] : proc.outputs)
-                cout << "      " << res << " : " << qty << endl;
-        }
-         cout << endl << "Optimize Goal :" << endl;
-        for (const auto& optimize : config.getOptimizeGoal()) {
-            cout << "  " << optimize << endl;
-        }
+        int delay = std::stoi(argv[2]);
+        ProcessManager processManager(config, delay);
+        processManager.runSimulation();
     }
     return 0;
 }
