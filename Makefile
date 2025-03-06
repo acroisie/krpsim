@@ -1,6 +1,6 @@
 NAME = krpsim
 CXX = g++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude
+CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude -g
 SRC := $(shell find src -type f -name "*.cpp")
 OBJS := $(SRC:.cpp=.o)
 
