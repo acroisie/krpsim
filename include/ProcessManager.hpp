@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include "Config.hpp"
+#include "Individual.hpp"
 
 class ProcessManager {
 public:
@@ -22,4 +23,7 @@ private:
     bool executeProcess(const Process* process);
     void updateStocksWithOutputs();
     void generateOutput();
+
+    static const int POPULATION_SIZE;
+    std::vector<Individual> population_;
 };
