@@ -20,7 +20,8 @@ int main(int argc, char* argv[]) {
         }
         int delay = std::stoi(argv[2]);
         ProcessManager processManager(config, delay);
-        processManager.runSimulation();
+        // processManager.runSimulation();
+        processManager.runGeneticAlgorithm();
     }
     return 0;
 }

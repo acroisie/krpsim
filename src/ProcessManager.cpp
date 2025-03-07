@@ -13,19 +13,19 @@ ProcessManager::ProcessManager(const Config &config, int delayLimit)
 
 bool ProcessManager::runSimulation() {
     while (currentCycle_ < delayLimit_) {
-        std::vector<const Process*> runnableProcesses = getRunnableProcesses();
+        vector<const Process*> runnableProcesses = getRunnableProcesses();
         if (runnableProcesses.empty()) {
-            std::cout << "No more processes to run." << std::endl;
+            cout << "No more processes to run." << endl;
             break;
         }
 
-        const Process* choosenProcess = chooseGreedyProcesses(runnableProcesses);
-        if (choosenProcess) {
-            executeProcess(choosenProcess);
-        } else {
-            std::cout << "No process to execute." << std::endl;
-            break;
-        }
+        // const Process* choosenProcess = chooseGreedyProcesses(runnableProcesses);
+        // if (choosenProcess) {
+        //     executeProcess(choosenProcess);
+        // } else {
+        //     cout << "No process to execute." << endl;
+        //     break;
+        // }
 
         currentCycle_++;
         updateStocksWithOutputs();
@@ -34,8 +34,13 @@ bool ProcessManager::runSimulation() {
     return true;
 }
 
-std::vector<const Process*> ProcessManager::getRunnableProcesses() {
-    std::vector<const Process*> runnable;
+bool ProcessManager::runGeneticAlgorithm() {
+    cout << "Genetic algorithm is not implemented yet." << endl;
+    return true;
+}
+
+vector<const Process*> ProcessManager::getRunnableProcesses() {
+    vector<const Process*> runnable;
     for (const auto &process : config_.getProcesses()) {
         bool canRun = true;
         for (const auto &input : process.inputs) {
@@ -51,14 +56,6 @@ std::vector<const Process*> ProcessManager::getRunnableProcesses() {
     return runnable;
 }
 
-const Process* ProcessManager::chooseGreedyProcesses(const std::vector<const Process*>& runnableProcesses) {
-    if (runnableProcesses.empty()) {
-        return nullptr;
-    }
-	
-    return runnableProcesses[0];
-}
-
 bool ProcessManager::executeProcess(const Process* process) {
     if (!process) {
         return false;
@@ -70,8 +67,8 @@ bool ProcessManager::executeProcess(const Process* process) {
         cout << "  Consuming stock: '" << input.first << "', quantity: " << input.second << endl;
         currentStocks_[input.first] -= input.second;
         if (currentStocks_[input.first] < 0) {
-            std::cout << "Error: Not enough input stock " << input.first
-                      << " for process " << process->name << std::endl;
+            cout << "Error: Not enough input stock " << input.first
+                      << " for process " << process->name << endl;
             return false;
         }
     }
