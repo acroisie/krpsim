@@ -8,6 +8,7 @@ class ProcessManager {
 public:
     ProcessManager(const Config &config, int delayLimit);
     bool runSimulation();
+    bool runGeneticAlgorithm();
 
 private:
     const Config &config_;
@@ -18,7 +19,6 @@ private:
     std::vector<std::pair<int, std::string>> executionLogs_;
 
     std::vector<const Process*> getRunnableProcesses();
-    const Process* chooseGreedyProcesses(const std::vector<const Process*>& runnableProcesses);
     bool executeProcess(const Process* process);
     void updateStocksWithOutputs();
     void generateOutput();
