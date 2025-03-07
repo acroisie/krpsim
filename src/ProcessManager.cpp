@@ -64,22 +64,25 @@ bool ProcessManager::executeProcess(const Process* process) {
         return false;
     }
 
+    cout << "Executing process: " << process->name << endl;
+
     for (const auto &input : process->inputs) {
+        cout << "  Consuming stock: '" << input.first << "', quantity: " << input.second << endl;
         currentStocks_[input.first] -= input.second;
         if (currentStocks_[input.first] < 0) {
-            std::cout << "Error: Not enough input stock " << input.first 
+            std::cout << "Error: Not enough input stock " << input.first
                       << " for process " << process->name << std::endl;
             return false;
         }
     }
 
     for (const auto &output : process->outputs) {
+        cout << "  Producing stock: '" << output.first << "', quantity: " << output.second << endl;
         currentStocks_[output.first] += output.second;
     }
 
     return true;
 }
-
 
 void ProcessManager::updateStocksWithOutputs() {
 	// Nothing to do here
