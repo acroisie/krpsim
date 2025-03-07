@@ -4,6 +4,7 @@
 
 class Individual {
 public:
+	Individual();
 	Individual(const std::vector<int> &processSequence);
 
 	std::vector<int> processSequence;

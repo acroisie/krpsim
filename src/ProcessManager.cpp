@@ -4,6 +4,8 @@
 
 using namespace std;
 
+const int ProcessManager::POPULATION_SIZE = 50;
+
 ProcessManager::ProcessManager(const Config &config, int delayLimit)
 	: config_(config), delayLimit_(delayLimit), currentCycle_(0) {
 	for (const auto &stock : config_.getStocks()) {
@@ -35,7 +37,15 @@ bool ProcessManager::runSimulation() {
 }
 
 bool ProcessManager::runGeneticAlgorithm() {
-    cout << "Genetic algorithm is not implemented yet." << endl;
+    cout << "Running genetic algorithm..." << endl;
+
+    population_.resize(POPULATION_SIZE);
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        population_[i] = Individual();
+        cout << "Individual " << i << ": " << "empty" << endl;
+    }
+
+    generateOutput();
     return true;
 }
 
