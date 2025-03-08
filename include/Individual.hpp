@@ -5,8 +5,8 @@
 class Individual {
 public:
 	Individual();
-	Individual(const std::vector<int> &processSequence);
+	Individual(const std::vector<std::string> &processSequence);
 
-	std::vector<int> processSequence;
+	std::vector<std::string> processSequence;
 	double fitness;
 };
