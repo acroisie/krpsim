@@ -1,6 +1,10 @@
 #include "ProcessManager.hpp"
 #include <iostream>
 #include <limits>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <random>
 
 using namespace std;
 
@@ -40,9 +44,32 @@ bool ProcessManager::runGeneticAlgorithm() {
     cout << "Running genetic algorithm..." << endl;
 
     population_.resize(POPULATION_SIZE);
+    vector<string> availableProcessNames;
+    for (const auto &process : config_.getProcesses()) {
+        availableProcessNames.push_back(process.name);
+    }
+
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_int_distribution<> lengthDistribution(1, delayLimit_);
+    uniform_int_distribution<> processDistribution(0, availableProcessNames.size() - 1);
+
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        population_[i] = Individual();
-        cout << "Individual " << i << ": " << "empty" << endl;
+        vector<string> randomSequence;
+        int sequenceLength = lengthDistribution(generator);
+        for (int j = 0; j < sequenceLength; ++j) {
+            if (!availableProcessNames.empty()) {
+                int processIndex = processDistribution(generator);
+                randomSequence.push_back(availableProcessNames[processIndex]);
+            }
+        }
+        population_[i] = Individual(randomSequence);
+
+        cout << "Individual " << i << ": Sequence = [ ";
+        for (const auto& processName : population_[i].processSequence) {
+            cout << processName << ", ";
+        }
+        cout << "]" << endl;
     }
 
     generateOutput();

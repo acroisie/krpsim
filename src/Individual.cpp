@@ -2,5 +2,5 @@
 #include <limits>
 
 Individual::Individual() {}
-Individual::Individual(const std::vector<int> &sequence)
+Individual::Individual(const std::vector<std::string> &sequence)
 	: processSequence(sequence), fitness(std::numeric_limits<double>::lowest()) {}
