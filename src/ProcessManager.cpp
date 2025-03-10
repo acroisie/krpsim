@@ -24,15 +24,7 @@ bool ProcessManager::runSimulation() {
             cout << "No more processes to run." << endl;
             break;
         }
-
-        // const Process* choosenProcess = chooseGreedyProcesses(runnableProcesses);
-        // if (choosenProcess) {
-        //     executeProcess(choosenProcess);
-        // } else {
-        //     cout << "No process to execute." << endl;
-        //     break;
-        // }
-
+        
         currentCycle_++;
         updateStocksWithOutputs();
     }
@@ -72,6 +64,11 @@ bool ProcessManager::runGeneticAlgorithm() {
         cout << "]" << endl;
     }
 
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        population_[i].fitness = calculateFitness(population_[i]);
+        cout << "Individual " << i << ": Fitness = " << population_[i].fitness << endl;
+    }
+
     generateOutput();
     return true;
 }
@@ -90,37 +87,51 @@ double ProcessManager::calculateFitness(Individual &individual) {
             break;
         }
 
-        const Process* processToExecute = nullptr;
-        for (const auto &process : config_.getProcesses()) {
-            if (process.name == processName) {
-                processToExecute = &process;
-                break;
-            }
-        }
+        cout << "  Cycle " << currentCycle_ << ": Starting cycle, process from sequence: " << processName << endl;
 
-        if (processToExecute) {
+        bool processExecutedThisCycle = false;
+
+        do {
+            processExecutedThisCycle = false;
+            cout << "    Cycle " << currentCycle_ << ": Entering do-while loop." << endl;
             vector<const Process*> runnableProcesses = getRunnableProcesses();
-            bool isRunnable = false;
-            for (const auto &runnableProcess : runnableProcesses) {
-                if (runnableProcess->name == processName) {
-                    isRunnable = true;
+            cout << "    Cycle " << currentCycle_ << ": getRunnableProcesses() returned " << runnableProcesses.size() << " processes." << endl;
+
+            if (!runnableProcesses.empty()) {
+                const Process* processToExecute = nullptr;
+                for (const auto &proc : runnableProcesses) {
+                    if (proc->name == processName) {
+                        processToExecute = proc;
+                        break;
+                    }
+                }
+                if (!processToExecute && !runnableProcesses.empty()) {
+                    processToExecute = runnableProcesses[0];
+                }
+
+
+                if (processToExecute) {
+                    cout << "    Cycle " << currentCycle_ << ": Executing process: " << processToExecute->name << endl;
+                    executeProcess(processToExecute);
+                    executionLogs_.push_back({currentCycle_, processToExecute->name});
+                    processExecutedThisCycle = true;
+                } else {
+                    cout << "    Cycle " << currentCycle_ << ": Aucun processus de sequence executable et aucun autre processus runnable trouvé." << endl;
                     break;
                 }
-            }
-            if (isRunnable) {
-                executeProcess(processToExecute);
-                executionLogs_.push_back({currentCycle_, processToExecute->name});
             } else {
-                cout << "Process '" << processName << "' from individual's sequence is not runnable at cycle " << currentCycle_ << "." << endl;
+                 cout << "    Cycle " << currentCycle_ << ": Aucun processus exécutable trouvé par getRunnableProcesses()." << endl;
+                break;
             }
-        } else {
-            cout << "Process '" << processName << "' from individual's sequence not found in config." << endl;
-        }
-        currentCycle_++;
-        updateStocksWithOutputs();
-    }
+             updateStocksWithOutputs();
 
-    // Fitness stuff
+        } while (processExecutedThisCycle);
+
+        currentCycle_++;
+    }
+    
+
+
     double fitnessScore = 0.0;
     const vector<string>& optimizeGoals = config_.getOptimizeGoal();
     if (!optimizeGoals.empty()) {
@@ -183,7 +194,7 @@ bool ProcessManager::executeProcess(const Process* process) {
 }
 
 void ProcessManager::updateStocksWithOutputs() {
-	// Nothing to do here
+
 }
 
 void ProcessManager::generateOutput() {
