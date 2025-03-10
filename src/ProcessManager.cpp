@@ -76,6 +76,70 @@ bool ProcessManager::runGeneticAlgorithm() {
     return true;
 }
 
+double ProcessManager::calculateFitness(Individual &individual) {
+    currentStocks_.clear();
+    for (const auto &stock : config_.getStocks()) {
+        currentStocks_[stock.name] = stock.quantity;
+    }
+
+    executionLogs_.clear();
+    currentCycle_ = 0;
+
+    for (const string& processName : individual.processSequence) {
+        if (currentCycle_ >= delayLimit_) {
+            break;
+        }
+
+        const Process* processToExecute = nullptr;
+        for (const auto &process : config_.getProcesses()) {
+            if (process.name == processName) {
+                processToExecute = &process;
+                break;
+            }
+        }
+
+        if (processToExecute) {
+            vector<const Process*> runnableProcesses = getRunnableProcesses();
+            bool isRunnable = false;
+            for (const auto &runnableProcess : runnableProcesses) {
+                if (runnableProcess->name == processName) {
+                    isRunnable = true;
+                    break;
+                }
+            }
+            if (isRunnable) {
+                executeProcess(processToExecute);
+                executionLogs_.push_back({currentCycle_, processToExecute->name});
+            } else {
+                cout << "Process '" << processName << "' from individual's sequence is not runnable at cycle " << currentCycle_ << "." << endl;
+            }
+        } else {
+            cout << "Process '" << processName << "' from individual's sequence not found in config." << endl;
+        }
+        currentCycle_++;
+        updateStocksWithOutputs();
+    }
+
+    // Fitness stuff
+    double fitnessScore = 0.0;
+    const vector<string>& optimizeGoals = config_.getOptimizeGoal();
+    if (!optimizeGoals.empty()) {
+        string goal = optimizeGoals[0];
+        if (currentStocks_.count(goal) > 0) {
+            fitnessScore = currentStocks_[goal]; 
+        } else if (goal == "time") {
+            // fitnessScore = currentCycle_;
+        } else { 
+            cout << "Warning: Optimize goal '" << goal << "' not found in stocks." << endl;
+            fitnessScore = numeric_limits<double>::lowest();
+        }
+    } else {
+        fitnessScore = 0.0;
+    }
+
+    return fitnessScore;
+}
+
 vector<const Process*> ProcessManager::getRunnableProcesses() {
     vector<const Process*> runnable;
     for (const auto &process : config_.getProcesses()) {
