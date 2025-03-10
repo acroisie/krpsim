@@ -41,7 +41,7 @@ bool ProcessManager::runSimulation() {
 }
 
 bool ProcessManager::runGeneticAlgorithm() {
-    cout << "Running genetic algorithm..." << endl;
+    cout << "Running genetic algorithm... (runGeneticAlgorithm() START)" << endl; // DEBUG: runGeneticAlgorithm start
 
     population_.resize(POPULATION_SIZE);
     vector<string> availableProcessNames;
@@ -72,11 +72,27 @@ bool ProcessManager::runGeneticAlgorithm() {
         cout << "]" << endl;
     }
 
+    // --- AJOUT ESSENTIEL : BOUCLE D'EVALUATION DE LA FITNESS ---
+    cout << "Starting fitness evaluation loop..." << endl; // DEBUG: Fitness loop start
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        double fitness = calculateFitness(population_[i]); // <-- APPEL A CALCULATEFITNESS POUR CHAQUE INDIVIDU !
+        population_[i].fitness = fitness; // <-- ASSIGNATION DE LA FITNESS A L'INDIVIDU (si votre classe Individual a un membre 'fitness')
+        cout << "  Individual " << i << " fitness: " << fitness << endl; // DEBUG: Fitness value for individual
+    }
+    cout << "Fitness evaluation loop finished." << endl; // DEBUG: Fitness loop end
+    // --- FIN AJOUT ESSENTIEL ---
+
+
     generateOutput();
+    cout << "Running genetic algorithm... (runGeneticAlgorithm() END)" << endl; // DEBUG: runGeneticAlgorithm end
     return true;
 }
 
 double ProcessManager::calculateFitness(Individual &individual) {
+    cout << "calculateFitness() called for individual. Sequence: ["; // DEBUG: Entrée dans calculateFitness
+    for (const auto& procName : individual.processSequence) cout << procName << ", ";
+    cout << "]" << endl;
+
     currentStocks_.clear();
     for (const auto &stock : config_.getStocks()) {
         currentStocks_[stock.name] = stock.quantity;
@@ -90,34 +106,47 @@ double ProcessManager::calculateFitness(Individual &individual) {
             break;
         }
 
-        const Process* processToExecute = nullptr;
-        for (const auto &process : config_.getProcesses()) {
-            if (process.name == processName) {
-                processToExecute = &process;
-                break;
-            }
-        }
+        cout << "  Cycle " << currentCycle_ << ": Starting cycle, process from sequence: " << processName << endl; // DEBUG: Début de cycle, process sequence
 
-        if (processToExecute) {
+        bool processExecutedThisCycle = false;
+
+        do {
+            processExecutedThisCycle = false;
+            cout << "    Cycle " << currentCycle_ << ": Entering do-while loop." << endl; // DEBUG: Entrée boucle do-while
             vector<const Process*> runnableProcesses = getRunnableProcesses();
-            bool isRunnable = false;
-            for (const auto &runnableProcess : runnableProcesses) {
-                if (runnableProcess->name == processName) {
-                    isRunnable = true;
+            cout << "    Cycle " << currentCycle_ << ": getRunnableProcesses() returned " << runnableProcesses.size() << " processes." << endl; // DEBUG: Nb process runnable
+
+            if (!runnableProcesses.empty()) {
+                const Process* processToExecute = nullptr;
+                for (const auto &proc : runnableProcesses) {
+                    if (proc->name == processName) {
+                        processToExecute = proc;
+                        break;
+                    }
+                }
+                if (!processToExecute && !runnableProcesses.empty()) {
+                    processToExecute = runnableProcesses[0];
+                }
+
+
+                if (processToExecute) {
+                    cout << "    Cycle " << currentCycle_ << ": Executing process: " << processToExecute->name << endl; // DEBUG: Processus exécuté
+                    executeProcess(processToExecute);
+                    executionLogs_.push_back({currentCycle_, processToExecute->name});
+                    processExecutedThisCycle = true;
+                } else {
+                    cout << "    Cycle " << currentCycle_ << ": Aucun processus de sequence executable et aucun autre processus runnable trouvé." << endl; // DEBUG: Aucun process runnable
                     break;
                 }
-            }
-            if (isRunnable) {
-                executeProcess(processToExecute);
-                executionLogs_.push_back({currentCycle_, processToExecute->name});
             } else {
-                cout << "Process '" << processName << "' from individual's sequence is not runnable at cycle " << currentCycle_ << "." << endl;
+                 cout << "    Cycle " << currentCycle_ << ": Aucun processus exécutable trouvé par getRunnableProcesses()." << endl; // DEBUG: getRunnableProcesses() vide
+                break;
             }
-        } else {
-            cout << "Process '" << processName << "' from individual's sequence not found in config." << endl;
-        }
+             updateStocksWithOutputs();
+
+        } while (processExecutedThisCycle);
+
         currentCycle_++;
-        updateStocksWithOutputs();
     }
 
     // Fitness stuff
@@ -126,34 +155,43 @@ double ProcessManager::calculateFitness(Individual &individual) {
     if (!optimizeGoals.empty()) {
         string goal = optimizeGoals[0];
         if (currentStocks_.count(goal) > 0) {
-            fitnessScore = currentStocks_[goal]; 
+            fitnessScore = currentStocks_[goal];
         } else if (goal == "time") {
             fitnessScore = -currentCycle_;
-        } else { 
+        } else {
             cout << "Warning: Optimize goal '" << goal << "' not found in stocks." << endl;
             fitnessScore = numeric_limits<double>::lowest();
         }
     } else {
         fitnessScore = 0.0;
     }
-
+    cout << "calculateFitness() finished, fitnessScore = " << fitnessScore << endl; // DEBUG: Fin calculateFitness et fitness
     return fitnessScore;
 }
 
 vector<const Process*> ProcessManager::getRunnableProcesses() {
+    cout << "  getRunnableProcesses() called, cycle: " << currentCycle_ << ", currentStocks: ["; // DEBUG: Entrée getRunnableProcesses
+    for (const auto& stockItem : currentStocks_) cout << stockItem.first << ":" << stockItem.second << ", ";
+    cout << "]" << endl;
+
     vector<const Process*> runnable;
     for (const auto &process : config_.getProcesses()) {
         bool canRun = true;
+        cout << "    Checking process: " << process.name << ", inputs: ["; // DEBUG: Processus vérifié
         for (const auto &input : process.inputs) {
+            cout << input.first << ":" << input.second << ", ";
             if (currentStocks_[input.first] < input.second) {
                 canRun = false;
+                cout << "] - NOT RUNNABLE, missing stock: " << input.first << " (required: " << input.second << ", available: " << currentStocks_[input.first] << ")" << endl; // DEBUG: Processus non runnable (stock manquant)
                 break;
             }
         }
         if (canRun) {
+            cout << "] - RUNNABLE" << endl; // DEBUG: Processus runnable
             runnable.push_back(&process);
         }
     }
+    cout << "  getRunnableProcesses() returning " << runnable.size() << " processes." << endl; // DEBUG: Retour getRunnableProcesses
     return runnable;
 }
 
