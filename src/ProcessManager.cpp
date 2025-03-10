@@ -128,7 +128,7 @@ double ProcessManager::calculateFitness(Individual &individual) {
         if (currentStocks_.count(goal) > 0) {
             fitnessScore = currentStocks_[goal]; 
         } else if (goal == "time") {
-            // fitnessScore = currentCycle_;
+            fitnessScore = -currentCycle_;
         } else { 
             cout << "Warning: Optimize goal '" << goal << "' not found in stocks." << endl;
             fitnessScore = numeric_limits<double>::lowest();
