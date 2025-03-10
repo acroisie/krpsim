@@ -26,4 +26,6 @@ private:
 
     static const int POPULATION_SIZE;
     std::vector<Individual> population_;
+
+    double calculateFitness(Individual &individual);
 };
