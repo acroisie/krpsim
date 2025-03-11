@@ -134,8 +134,6 @@ double ProcessManager::calculateFitness(Individual &individual) {
 
         currentCycle_++;
     }
-    
-
 
     double fitnessScore = 0.0;
     const vector<string>& optimizeGoals = config_.getOptimizeGoal();
@@ -154,6 +152,83 @@ double ProcessManager::calculateFitness(Individual &individual) {
     }
     cout << "calculateFitness() finished, fitnessScore = " << fitnessScore << endl; // DEBUG: Fin calculateFitness et fitness
     return fitnessScore;
+}
+
+vector<Individual> selectParents(const vector<Individual>& population) {
+    vector<Individual> parents;
+    vector<double> fitnessValues;
+    for (const auto& individual : population) {
+        fitnessValues.push_back(individual.fitness);
+    }
+
+    double totalFitness = 0.0;
+    for (double fitness : fitnessValues) {
+        totalFitness += fitness;
+    }
+
+    vector<double> selectionProbabilities;
+    for (double fitness : fitnessValues) {
+        selectionProbabilities.push_back(fitness / totalFitness);
+    }
+
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_real_distribution<> distribution(0.0, 1.0);
+
+    for (int i = 0; i < 2; ++i) {
+        double randomValue = distribution(generator);
+        double cumulativeProbability = 0.0;
+        for (int j = 0; j < selectionProbabilities.size(); ++j) {
+            cumulativeProbability += selectionProbabilities[j];
+            if (randomValue <= cumulativeProbability) {
+                parents.push_back(population[j]);
+                break;
+            }
+        }
+    }
+
+    return parents;
+}
+
+pair<Individual, Individual> crossover(const Individual& parent1, const Individual& parent2) {
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_int_distribution<> distribution(0, parent1.processSequence.size() - 1);
+
+    int crossoverPoint = distribution(generator);
+    vector<string> child1Sequence;
+    vector<string> child2Sequence;
+
+    for (int i = 0; i < parent1.processSequence.size(); ++i) {
+        if (i <= crossoverPoint) {
+            child1Sequence.push_back(parent1.processSequence[i]);
+            child2Sequence.push_back(parent2.processSequence[i]);
+        } else {
+            child1Sequence.push_back(parent2.processSequence[i]);
+            child2Sequence.push_back(parent1.processSequence[i]);
+        }
+    }
+
+    return make_pair(Individual(child1Sequence), Individual(child2Sequence));
+}
+
+Individual mutate(const Individual& individual) {
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_int_distribution<> processDistribution(0, individual.processSequence.size() - 1);
+    uniform_int_distribution<> lengthDistribution(1, 3);
+
+    vector<string> mutatedSequence = individual.processSequence;
+    int mutationPoint = processDistribution(generator);
+    int mutationLength = lengthDistribution(generator);
+
+    for (int i = mutationPoint; i < mutationPoint + mutationLength; ++i) {
+        if (i < mutatedSequence.size()) {
+            mutatedSequence[i] = "mutated"; // Adapt the rest of the code 
+        }
+    }
+
+    return Individual(mutatedSequence);
 }
 
 vector<const Process*> ProcessManager::getRunnableProcesses() {
