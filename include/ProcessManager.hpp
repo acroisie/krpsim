@@ -22,13 +22,18 @@ private:
     std::vector<const Process*> getRunnableProcesses();
     bool executeProcess(const Process* process);
     void generateOutput();
-    Individual mutate(const Individual& individual);
+    Individual mutate(const Individual& individual, double mutationRate);
+    std::vector<Individual> mutationPopulation(std::vector<Individual>& population, double mutationRate);
+    void initializePopulation();
+    void evaluateFitness();
     std::pair<Individual, Individual> crossover(const Individual& parent1, const Individual& parent2);
+    std::vector<Individual> crossoverPopulation(const std::vector<Individual>& parents, double crossoverRate);
     std::vector<Individual> selectParents(const std::vector<Individual>& population);
 
 
     static const int POPULATION_SIZE;
     std::vector<Individual> population_;
+    std::vector<Individual> selection();
 
     double calculateFitness(Individual &individual);
 };
