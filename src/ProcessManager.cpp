@@ -17,19 +17,6 @@ ProcessManager::ProcessManager(const Config &config, int delayLimit)
     }
 }
 
-bool ProcessManager::runSimulation() {
-    while (currentCycle_ < delayLimit_) {
-        vector<const Process*> runnableProcesses = getRunnableProcesses();
-        if (runnableProcesses.empty()) {
-            break;
-        }
-
-        currentCycle_++;
-    }
-    generateOutput();
-    return true;
-}
-
 void ProcessManager::initializePopulation() {
     population_.resize(POPULATION_SIZE);
     vector<string> availableProcessNames;
@@ -186,14 +173,14 @@ vector<Individual> ProcessManager::selectParents(const vector<Individual>& popul
     mt19937 generator(rd());
     uniform_real_distribution<> distribution(0.0, 1.0);
 
-    for (int i = 0; i < POPULATION_SIZE; ++i) { // Sélectionne POPULATION_SIZE parents pour la prochaine génération
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
         double randomValue = distribution(generator);
         double cumulativeProbability = 0.0;
         for (size_t j = 0; j < selectionProbabilities.size(); ++j) {
             cumulativeProbability += selectionProbabilities[j];
             if (randomValue <= cumulativeProbability) {
                 parents.push_back(population[j]);
-                // break;
+                break;
             }
         }
     }

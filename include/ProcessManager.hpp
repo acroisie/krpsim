@@ -8,7 +8,6 @@
 class ProcessManager {
 public:
     ProcessManager(const Config &config, int delayLimit);
-    bool runSimulation(); //To remove useless now
     bool runGeneticAlgorithm();
 
 private:
