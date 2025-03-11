@@ -14,10 +14,6 @@ int main(int argc, char* argv[]) {
     Parser parser(argv[1]);
     Config config;
     if (parser.parse(config)) {
-        cout << "Stocks after parsing: " << endl;
-        for (const Stock &stock : config.getStocks()) {
-            cout << "Stock: " << stock.name << " " << stock.quantity << endl;
-        }
         int delay = std::stoi(argv[2]);
         ProcessManager processManager(config, delay);
         // processManager.runSimulation();

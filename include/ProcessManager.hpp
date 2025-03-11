@@ -8,7 +8,7 @@
 class ProcessManager {
 public:
     ProcessManager(const Config &config, int delayLimit);
-    bool runSimulation();
+    bool runSimulation(); //To remove useless now
     bool runGeneticAlgorithm();
 
 private:
@@ -21,8 +21,11 @@ private:
 
     std::vector<const Process*> getRunnableProcesses();
     bool executeProcess(const Process* process);
-    void updateStocksWithOutputs();
     void generateOutput();
+    Individual mutate(const Individual& individual);
+    std::pair<Individual, Individual> crossover(const Individual& parent1, const Individual& parent2);
+    std::vector<Individual> selectParents(const std::vector<Individual>& population);
+
 
     static const int POPULATION_SIZE;
     std::vector<Individual> population_;

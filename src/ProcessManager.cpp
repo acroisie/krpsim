@@ -26,7 +26,6 @@ bool ProcessManager::runSimulation() {
         }
         
         currentCycle_++;
-        updateStocksWithOutputs();
     }
     generateOutput();
     return true;
@@ -75,7 +74,7 @@ bool ProcessManager::runGeneticAlgorithm() {
 }
 
 double ProcessManager::calculateFitness(Individual &individual) {
-    cout << "calculateFitness() called for individual. Sequence: ["; // DEBUG: Entrée dans calculateFitness
+    cout << "calculateFitness() called for individual. Sequence: [";
     for (const auto& procName : individual.processSequence) cout << procName << ", ";
     cout << "]" << endl;
 
@@ -83,6 +82,9 @@ double ProcessManager::calculateFitness(Individual &individual) {
     for (const auto &stock : config_.getStocks()) {
         currentStocks_[stock.name] = stock.quantity;
     }
+    cout << "  Initial stocks in calculateFitness: ["; // Ajout du log pour l'initialisation
+    for (const auto& stockItem : currentStocks_) cout << stockItem.first << ":" << stockItem.second << ", ";
+    cout << "]" << endl;
 
     executionLogs_.clear();
     currentCycle_ = 0;
@@ -128,7 +130,6 @@ double ProcessManager::calculateFitness(Individual &individual) {
                  cout << "    Cycle " << currentCycle_ << ": Aucun processus exécutable trouvé par getRunnableProcesses()." << endl;
                 break;
             }
-             updateStocksWithOutputs();
 
         } while (processExecutedThisCycle);
 
@@ -154,7 +155,7 @@ double ProcessManager::calculateFitness(Individual &individual) {
     return fitnessScore;
 }
 
-vector<Individual> selectParents(const vector<Individual>& population) {
+vector<Individual> ProcessManager::selectParents(const vector<Individual>& population) {
     vector<Individual> parents;
     vector<double> fitnessValues;
     for (const auto& individual : population) {
@@ -178,7 +179,7 @@ vector<Individual> selectParents(const vector<Individual>& population) {
     for (int i = 0; i < 2; ++i) {
         double randomValue = distribution(generator);
         double cumulativeProbability = 0.0;
-        for (int j = 0; j < selectionProbabilities.size(); ++j) {
+        for (size_t j = 0; j < selectionProbabilities.size(); ++j) {
             cumulativeProbability += selectionProbabilities[j];
             if (randomValue <= cumulativeProbability) {
                 parents.push_back(population[j]);
@@ -190,20 +191,20 @@ vector<Individual> selectParents(const vector<Individual>& population) {
     return parents;
 }
 
-pair<Individual, Individual> crossover(const Individual& parent1, const Individual& parent2) {
+pair<Individual, Individual> ProcessManager::crossover(const Individual& parent1, const Individual& parent2) {
     random_device rd;
     mt19937 generator(rd());
     uniform_int_distribution<> distribution(0, parent1.processSequence.size() - 1);
 
-    int crossoverPoint = distribution(generator);
+    size_t crossoverPoint = distribution(generator);
     vector<string> child1Sequence;
     vector<string> child2Sequence;
 
-    for (int i = 0; i < parent1.processSequence.size(); ++i) {
+    for (size_t i = 0; i < parent1.processSequence.size(); ++i) {
         if (i <= crossoverPoint) {
             child1Sequence.push_back(parent1.processSequence[i]);
             child2Sequence.push_back(parent2.processSequence[i]);
-        } else {
+        } else { 
             child1Sequence.push_back(parent2.processSequence[i]);
             child2Sequence.push_back(parent1.processSequence[i]);
         }
@@ -212,17 +213,17 @@ pair<Individual, Individual> crossover(const Individual& parent1, const Individu
     return make_pair(Individual(child1Sequence), Individual(child2Sequence));
 }
 
-Individual mutate(const Individual& individual) {
+Individual ProcessManager::mutate(const Individual& individual) {
     random_device rd;
     mt19937 generator(rd());
     uniform_int_distribution<> processDistribution(0, individual.processSequence.size() - 1);
     uniform_int_distribution<> lengthDistribution(1, 3);
 
     vector<string> mutatedSequence = individual.processSequence;
-    int mutationPoint = processDistribution(generator);
-    int mutationLength = lengthDistribution(generator);
+    size_t mutationPoint = processDistribution(generator);
+    size_t mutationLength = lengthDistribution(generator);
 
-    for (int i = mutationPoint; i < mutationPoint + mutationLength; ++i) {
+    for (size_t i = mutationPoint; i < mutationPoint + mutationLength; ++i) {
         if (i < mutatedSequence.size()) {
             mutatedSequence[i] = "mutated"; // Adapt the rest of the code 
         }
@@ -232,28 +233,33 @@ Individual mutate(const Individual& individual) {
 }
 
 vector<const Process*> ProcessManager::getRunnableProcesses() {
-    cout << "  getRunnableProcesses() called, cycle: " << currentCycle_ << ", currentStocks: ["; // DEBUG: Entrée getRunnableProcesses
+    cout << "  getRunnableProcesses() called, cycle: " << currentCycle_ << ", currentStocks: [";
     for (const auto& stockItem : currentStocks_) cout << stockItem.first << ":" << stockItem.second << ", ";
     cout << "]" << endl;
 
     vector<const Process*> runnable;
     for (const auto &process : config_.getProcesses()) {
         bool canRun = true;
-        cout << "    Checking process: " << process.name << ", inputs: ["; // DEBUG: Processus vérifié
+        cout << "    Checking process: " << process.name << ", inputs: [";
         for (const auto &input : process.inputs) {
             cout << input.first << ":" << input.second << ", ";
+            if (currentStocks_.count(input.first) == 0) { // Vérifier si le stock existe dans currentStocks_
+                canRun = false;
+                cout << "] - NOT RUNNABLE, stock manquant: " << input.first << " (requis mais non défini dans currentStocks_)" << endl;
+                break;
+            }
             if (currentStocks_[input.first] < input.second) {
                 canRun = false;
-                cout << "] - NOT RUNNABLE, missing stock: " << input.first << " (required: " << input.second << ", available: " << currentStocks_[input.first] << ")" << endl; // DEBUG: Processus non runnable (stock manquant)
+                cout << "] - NOT RUNNABLE, stock insuffisant: " << input.first << " (requis: " << input.second << ", disponible: " << currentStocks_[input.first] << ")" << endl;
                 break;
             }
         }
         if (canRun) {
-            cout << "] - RUNNABLE" << endl; // DEBUG: Processus runnable
+            cout << "] - RUNNABLE" << endl;
             runnable.push_back(&process);
         }
     }
-    cout << "  getRunnableProcesses() returning " << runnable.size() << " processes." << endl; // DEBUG: Retour getRunnableProcesses
+    cout << "  getRunnableProcesses() returning " << runnable.size() << " processes." << endl;
     return runnable;
 }
 
@@ -280,10 +286,6 @@ bool ProcessManager::executeProcess(const Process* process) {
     }
 
     return true;
-}
-
-void ProcessManager::updateStocksWithOutputs() {
-
 }
 
 void ProcessManager::generateOutput() {
