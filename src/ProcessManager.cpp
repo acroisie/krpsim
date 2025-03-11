@@ -94,42 +94,128 @@ bool ProcessManager::runGeneticAlgorithm() {
 }
 
 double ProcessManager::calculateFitness(Individual &individual) {
+    // Initialize stocks and clear logs
     currentStocks_.clear();
     for (const auto &stock : config_.getStocks()) {
         currentStocks_[stock.name] = stock.quantity;
     }
     executionLogs_.clear();
     currentCycle_ = 0;
-    for (const string& processName : individual.processSequence) {
-        if (currentCycle_ >= delayLimit_)
-            break;
-        bool processExecutedThisCycle = false;
-        do {
-            processExecutedThisCycle = false;
-            vector<const Process *> runnableProcesses = getRunnableProcesses();
-            if (!runnableProcesses.empty()) {
-                const Process* processToExecute = nullptr;
-                for (const auto &proc : runnableProcesses) {
-                    if (proc->name == processName) {
-                        processToExecute = proc;
-                        break;
-                    }
+
+    // Track running processes with their completion times
+    struct RunningProcess
+    {
+        const Process *process;
+        int completionCycle;
+    };
+    vector<RunningProcess> runningProcesses;
+
+    size_t processIndex = 0;
+    while (currentCycle_ < delayLimit_ && processIndex < individual.processSequence.size())
+    {
+        // First, check if any processes have completed at this cycle
+        auto it = runningProcesses.begin();
+        while (it != runningProcesses.end())
+        {
+            if (it->completionCycle <= currentCycle_)
+            {
+                // Process completed, apply outputs
+                for (const auto &output : it->process->outputs)
+                {
+                    currentStocks_[output.first] += output.second;
                 }
-                if (!processToExecute && !runnableProcesses.empty())
-                    processToExecute = runnableProcesses[0];
-                if (processToExecute) {
-                    executeProcess(processToExecute);
-                    executionLogs_.push_back({currentCycle_, processToExecute->name});
-                    processExecutedThisCycle = true;
-                } else {
-                    break;
-                }
-            } else {
+                it = runningProcesses.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
+        // Try to execute the current process in the sequence
+        string currentProcessName = individual.processSequence[processIndex];
+        vector<const Process *> runnableProcesses = getRunnableProcesses();
+
+        const Process *processToExecute = nullptr;
+        for (const auto &proc : runnableProcesses)
+        {
+            if (proc->name == currentProcessName)
+            {
+                processToExecute = proc;
                 break;
             }
-        } while (processExecutedThisCycle);
-        currentCycle_++;
+        }
+
+        if (processToExecute)
+        {
+            // Consume inputs immediately
+            for (const auto &input : processToExecute->inputs)
+            {
+                currentStocks_[input.first] -= input.second;
+            }
+
+            // Schedule completion
+            runningProcesses.push_back({processToExecute,
+                                        currentCycle_ + processToExecute->nbCycle});
+
+            // Log the start of the process
+            executionLogs_.push_back({currentCycle_, processToExecute->name});
+
+            // Move to next process in sequence
+            processIndex++;
+        }
+        else
+        {
+            // Current process can't run, either due to resources or still running
+            // Advance time to the next completion or just increment by 1
+            if (!runningProcesses.empty())
+            {
+                int nextCompletionTime = delayLimit_;
+                for (const auto &rp : runningProcesses)
+                {
+                    nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+                }
+                currentCycle_ = nextCompletionTime;
+            }
+            else
+            {
+                // No processes running, try next process
+                processIndex++;
+                currentCycle_++;
+            }
+        }
     }
+
+    // Make sure all running processes complete (or reach the delay limit)
+    while (!runningProcesses.empty() && currentCycle_ < delayLimit_)
+    {
+        int nextCompletionTime = delayLimit_;
+        for (const auto &rp : runningProcesses)
+        {
+            nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+        }
+        currentCycle_ = nextCompletionTime;
+
+        auto it = runningProcesses.begin();
+        while (it != runningProcesses.end())
+        {
+            if (it->completionCycle <= currentCycle_)
+            {
+                // Process completed, apply outputs
+                for (const auto &output : it->process->outputs)
+                {
+                    currentStocks_[output.first] += output.second;
+                }
+                it = runningProcesses.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    // Calculate fitness as before
     double fitnessScore = 0.0;
     const vector<string>& optimizeGoals = config_.getOptimizeGoal();
     if (!optimizeGoals.empty()) {
@@ -286,32 +372,166 @@ bool ProcessManager::executeProcess(const Process* process) {
 }
 
 void ProcessManager::generateOutput() {
-    cout << "Simulation completed in " << currentCycle_ << " cycles." << endl;
-    cout << "Final stocks:" << endl;
-    for (auto stock : currentStocks_) {
-        cout << "Stock " << stock.first << ": " << stock.second << endl;
-    }
-    cout << "Execution logs:" << endl;
-    for (auto log : executionLogs_) {
-        cout << "Cycle " << log.first << ": " << log.second << endl;
-    }
+    // Find the best individual
     double bestFitness = numeric_limits<double>::lowest();
-    const Individual* bestIndividual = nullptr;
-    for (const auto& indiv : population_) {
-        if (indiv.fitness > bestFitness) {
+    const Individual *bestIndividual = nullptr;
+    for (const auto &indiv : population_)
+    {
+        if (indiv.fitness > bestFitness)
+        {
             bestFitness = indiv.fitness;
             bestIndividual = &indiv;
         }
     }
-    if (bestIndividual) {
-        cout << "\nBest Individual in Final Population:" << endl;
-        cout << "  Fitness: " << bestIndividual->fitness << endl;
-        cout << "  Process Sequence: [";
-        for (const auto& processName : bestIndividual->processSequence) {
-            cout << processName << ", ";
-        }
-        cout << "]" << endl;
-    } else {
+
+    if (!bestIndividual)
+    {
         cout << "\nNo best individual found in final population." << endl;
+        return;
+    }
+
+    // Re-run the simulation with the best individual to generate accurate logs
+    cout << "\nRe-running simulation with best individual..." << endl;
+
+    // Clear stocks and logs
+    currentStocks_.clear();
+    for (const auto &stock : config_.getStocks())
+    {
+        currentStocks_[stock.name] = stock.quantity;
+    }
+    executionLogs_.clear();
+    currentCycle_ = 0;
+
+    // Simulate the best individual's process sequence
+    struct RunningProcess
+    {
+        const Process *process;
+        int completionCycle;
+    };
+    vector<RunningProcess> runningProcesses;
+
+    size_t processIndex = 0;
+    while (currentCycle_ < delayLimit_ && processIndex < bestIndividual->processSequence.size())
+    {
+        // Check for completed processes at this cycle
+        auto it = runningProcesses.begin();
+        while (it != runningProcesses.end())
+        {
+            if (it->completionCycle <= currentCycle_)
+            {
+                // Process completed, apply outputs
+                for (const auto &output : it->process->outputs)
+                {
+                    currentStocks_[output.first] += output.second;
+                }
+                it = runningProcesses.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
+        // Try to execute the current process in the sequence
+        const string &currentProcessName = bestIndividual->processSequence[processIndex];
+        vector<const Process *> runnableProcesses = getRunnableProcesses();
+
+        const Process *processToExecute = nullptr;
+        for (const auto &proc : runnableProcesses)
+        {
+            if (proc->name == currentProcessName)
+            {
+                processToExecute = proc;
+                break;
+            }
+        }
+
+        if (processToExecute)
+        {
+            // Consume inputs
+            for (const auto &input : processToExecute->inputs)
+            {
+                currentStocks_[input.first] -= input.second;
+            }
+
+            // Schedule completion
+            runningProcesses.push_back({processToExecute,
+                                        currentCycle_ + processToExecute->nbCycle});
+
+            // Log the process start
+            executionLogs_.push_back({currentCycle_, processToExecute->name});
+
+            processIndex++;
+        }
+        else
+        {
+            // Process can't run yet or ever
+            if (!runningProcesses.empty())
+            {
+                // Advance to next completion
+                int nextCompletionTime = delayLimit_;
+                for (const auto &rp : runningProcesses)
+                {
+                    nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+                }
+                currentCycle_ = nextCompletionTime;
+            }
+            else
+            {
+                // Skip to next process or advance time
+                processIndex++;
+                currentCycle_++;
+            }
+        }
+    }
+
+    // Complete any remaining running processes
+    while (!runningProcesses.empty() && currentCycle_ < delayLimit_)
+    {
+        int nextCompletionTime = delayLimit_;
+        for (const auto &rp : runningProcesses)
+        {
+            nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+        }
+        currentCycle_ = nextCompletionTime;
+
+        auto it = runningProcesses.begin();
+        while (it != runningProcesses.end())
+        {
+            if (it->completionCycle <= currentCycle_)
+            {
+                for (const auto &output : it->process->outputs)
+                {
+                    currentStocks_[output.first] += output.second;
+                }
+                it = runningProcesses.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    // Now display accurate results in the required format
+    cout << "Nice file! " << config_.getProcesses().size() << " processes, "
+         << config_.getStocks().size() << " stocks, "
+         << config_.getOptimizeGoal().size() << " to optimize" << endl;
+
+    cout << "Evaluating .................. done." << endl;
+    cout << "Main walk" << endl;
+
+    // Print process execution log in the required format
+    for (auto log : executionLogs_)
+    {
+        cout << log.first << ":" << log.second << endl;
+    }
+
+    cout << "no more process doable at time " << currentCycle_ << endl;
+
+    cout << "Stock :" << endl;
+    for (auto stock : currentStocks_)
+    {
+        cout << stock.first << "=> " << stock.second << endl;
     }
 }
