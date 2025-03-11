@@ -1,4 +1,7 @@
 #include "ProcessManager.hpp"
+#include "Config.hpp"
+#include "Individual.hpp"
+#include "Process.hpp"
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -23,12 +26,10 @@ void ProcessManager::initializePopulation() {
     for (const auto &process : config_.getProcesses()) {
         availableProcessNames.push_back(process.name);
     }
-
     random_device rd;
     mt19937 generator(rd());
     uniform_int_distribution<> lengthDistribution(1, delayLimit_);
     uniform_int_distribution<> processDistribution(0, availableProcessNames.size() - 1);
-
     for (int i = 0; i < POPULATION_SIZE; ++i) {
         vector<string> randomSequence;
         int sequenceLength = lengthDistribution(generator);
@@ -58,34 +59,36 @@ bool ProcessManager::runGeneticAlgorithm() {
     double mutationRate = 0.1;
     double crossoverRate = 0.7;
     int generationCount = 50;
-
     cout << "Running genetic algorithm... (runGeneticAlgorithm() START)" << endl;
-
     initializePopulation();
     cout << "Initial population generated." << endl;
-
     cout << "Starting evolution over " << generationCount << " generations..." << endl;
+
+    // Evaluate initial population fitness
+    evaluateFitness();
+
     for (int generation = 0; generation < generationCount; ++generation) {
         cout << "--- Generation " << generation << " ---" << endl;
 
-        evaluateFitness();
+        // Selection, crossover, and mutation
         vector<Individual> parents = selection();
         vector<Individual> nextGeneration = crossoverPopulation(parents, crossoverRate);
         population_ = mutationPopulation(nextGeneration, mutationRate);
 
+        // IMPORTANT FIX: Evaluate the new population's fitness
+        evaluateFitness();
+
+        // Now find the best fitness in the properly evaluated population
         double bestFitnessThisGen = numeric_limits<double>::lowest();
         for (const auto& indiv : population_) {
-            if (indiv.fitness > bestFitnessThisGen) {
+            if (indiv.fitness > bestFitnessThisGen)
                 bestFitnessThisGen = indiv.fitness;
-            }
         }
         cout << "  Best fitness in generation " << generation << ": " << bestFitnessThisGen << endl;
     }
+
     cout << "Evolution finished over " << generationCount << " generations." << endl;
-
-    evaluateFitness();
     generateOutput();
-
     cout << "Running genetic algorithm... (runGeneticAlgorithm() END)" << endl;
     return true;
 }
@@ -97,17 +100,13 @@ double ProcessManager::calculateFitness(Individual &individual) {
     }
     executionLogs_.clear();
     currentCycle_ = 0;
-
     for (const string& processName : individual.processSequence) {
-        if (currentCycle_ >= delayLimit_) {
+        if (currentCycle_ >= delayLimit_)
             break;
-        }
         bool processExecutedThisCycle = false;
-
         do {
             processExecutedThisCycle = false;
-            vector<const Process*> runnableProcesses = getRunnableProcesses();
-
+            vector<const Process *> runnableProcesses = getRunnableProcesses();
             if (!runnableProcesses.empty()) {
                 const Process* processToExecute = nullptr;
                 for (const auto &proc : runnableProcesses) {
@@ -116,10 +115,8 @@ double ProcessManager::calculateFitness(Individual &individual) {
                         break;
                     }
                 }
-                if (!processToExecute && !runnableProcesses.empty()) {
+                if (!processToExecute && !runnableProcesses.empty())
                     processToExecute = runnableProcesses[0];
-                }
-
                 if (processToExecute) {
                     executeProcess(processToExecute);
                     executionLogs_.push_back({currentCycle_, processToExecute->name});
@@ -130,22 +127,19 @@ double ProcessManager::calculateFitness(Individual &individual) {
             } else {
                 break;
             }
-
         } while (processExecutedThisCycle);
         currentCycle_++;
     }
-
     double fitnessScore = 0.0;
     const vector<string>& optimizeGoals = config_.getOptimizeGoal();
     if (!optimizeGoals.empty()) {
         string goal = optimizeGoals[0];
-        if (currentStocks_.count(goal) > 0) {
+        if (currentStocks_.count(goal) > 0)
             fitnessScore = currentStocks_[goal];
-        } else if (goal == "time") {
+        else if (goal == "time")
             fitnessScore = -currentCycle_;
-        } else {
+        else
             fitnessScore = numeric_limits<double>::lowest();
-        }
     } else {
         fitnessScore = 0.0;
     }
@@ -158,21 +152,23 @@ vector<Individual> ProcessManager::selectParents(const vector<Individual>& popul
     for (const auto& individual : population) {
         fitnessValues.push_back(individual.fitness);
     }
-
     double totalFitness = 0.0;
     for (double fitness : fitnessValues) {
         totalFitness += fitness;
     }
-
     vector<double> selectionProbabilities;
-    for (double fitness : fitnessValues) {
-        selectionProbabilities.push_back(fitness / totalFitness);
+    if (totalFitness <= 0)
+        selectionProbabilities.assign(fitnessValues.size(), 1.0 / fitnessValues.size());
+    else
+    {
+        for (double fitness : fitnessValues)
+        {
+            selectionProbabilities.push_back(fitness / totalFitness);
+        }
     }
-
     random_device rd;
     mt19937 generator(rd());
     uniform_real_distribution<> distribution(0.0, 1.0);
-
     for (int i = 0; i < POPULATION_SIZE; ++i) {
         double randomValue = distribution(generator);
         double cumulativeProbability = 0.0;
@@ -190,32 +186,24 @@ vector<Individual> ProcessManager::selectParents(const vector<Individual>& popul
 pair<Individual, Individual> ProcessManager::crossover(const Individual& parent1, const Individual& parent2) {
     random_device rd;
     mt19937 generator(rd());
-    uniform_int_distribution<> distribution(0, min(parent1.processSequence.size(), parent2.processSequence.size()) > 0 ? min(parent1.processSequence.size(), parent2.processSequence.size()) - 1 : 0); // Prevent distribution from being invalid if sequences are empty
-
+    uniform_int_distribution<> distribution(0, min(parent1.processSequence.size(), parent2.processSequence.size()) > 0 ? min(parent1.processSequence.size(), parent2.processSequence.size()) - 1 : 0);
     size_t crossoverPoint = 0;
-    if (parent1.processSequence.size() > 0 && parent2.processSequence.size() > 0) { // Only crossover if sequences are not empty
+    if (parent1.processSequence.size() > 0 && parent2.processSequence.size() > 0)
         crossoverPoint = distribution(generator);
-    }
-
     vector<string> child1Sequence;
     vector<string> child2Sequence;
-
     for (size_t i = 0; i < parent1.processSequence.size(); ++i) {
-        if (i <= crossoverPoint) {
+        if (i <= crossoverPoint)
             child1Sequence.push_back(parent1.processSequence[i]);
-        } else if (i < parent2.processSequence.size()){
+        else if (i < parent2.processSequence.size())
             child1Sequence.push_back(parent2.processSequence[i]);
-        }
     }
-
     for (size_t i = 0; i < parent2.processSequence.size(); ++i) {
-         if (i <= crossoverPoint && i < parent1.processSequence.size()) {
+        if (i <= crossoverPoint && i < parent1.processSequence.size())
             child2Sequence.push_back(parent2.processSequence[i]);
-        } else if (i < parent1.processSequence.size()){
-            child2Sequence.push_back(parent1.processSequence[i]);
-        }
+         else if (i < parent1.processSequence.size())
+             child2Sequence.push_back(parent1.processSequence[i]);
     }
-
     return make_pair(Individual(child1Sequence), Individual(child2Sequence));
 }
 
@@ -224,7 +212,6 @@ vector<Individual> ProcessManager::crossoverPopulation(const vector<Individual>&
     random_device rd;
     mt19937 generator(rd());
     uniform_real_distribution<> probabilityDistribution(0.0, 1.0);
-
     for (int i = 0; i < POPULATION_SIZE / 2; ++i) {
         if (probabilityDistribution(generator) < crossoverRate) {
             pair<Individual, Individual> children = crossover(parents[i % parents.size()], parents[(i + 1) % parents.size()]);
@@ -243,9 +230,7 @@ Individual ProcessManager::mutate(const Individual& individual, double mutationR
     mt19937 generator(rd());
     uniform_real_distribution<> probabilityDistribution(0.0, 1.0);
     uniform_int_distribution<> processDistribution(0, config_.getProcesses().size() - 1);
-
     vector<string> mutatedSequence = individual.processSequence;
-
     if (probabilityDistribution(generator) < mutationRate) {
         if (!mutatedSequence.empty()) {
             uniform_int_distribution<> pointDistribution(0, mutatedSequence.size() - 1);
@@ -255,7 +240,6 @@ Individual ProcessManager::mutate(const Individual& individual, double mutationR
             mutatedSequence[mutationPoint] = processNameToMutateTo;
         }
     }
-
     return Individual(mutatedSequence);
 }
 
@@ -281,29 +265,23 @@ vector<const Process*> ProcessManager::getRunnableProcesses() {
                 break;
             }
         }
-        if (canRun) {
+        if (canRun)
             runnable.push_back(&process);
-        }
     }
     return runnable;
 }
 
 bool ProcessManager::executeProcess(const Process* process) {
-    if (!process) {
+    if (!process)
         return false;
-    }
-
     for (const auto &input : process->inputs) {
         currentStocks_[input.first] -= input.second;
-        if (currentStocks_[input.first] < 0) {
+        if (currentStocks_[input.first] < 0)
             return false;
-        }
     }
-
     for (const auto &output : process->outputs) {
         currentStocks_[output.first] += output.second;
     }
-
     return true;
 }
 
@@ -317,7 +295,6 @@ void ProcessManager::generateOutput() {
     for (auto log : executionLogs_) {
         cout << "Cycle " << log.first << ": " << log.second << endl;
     }
-    // Find and Output Best Individual from the final population
     double bestFitness = numeric_limits<double>::lowest();
     const Individual* bestIndividual = nullptr;
     for (const auto& indiv : population_) {
@@ -326,7 +303,6 @@ void ProcessManager::generateOutput() {
             bestIndividual = &indiv;
         }
     }
-
     if (bestIndividual) {
         cout << "\nBest Individual in Final Population:" << endl;
         cout << "  Fitness: " << bestIndividual->fitness << endl;
