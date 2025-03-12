@@ -15,6 +15,10 @@ int main(int argc, char* argv[]) {
     Config config;
     if (parser.parse(config)) {
         int delay = std::stoi(argv[2]);
+        if (delay <= 0) {
+            std::cerr << "Error: Delay must be a positive integer." << std::endl;
+            return 1;
+        }
         ProcessManager processManager(config, delay);
         // processManager.runSimulation();
         processManager.runGeneticAlgorithm();
