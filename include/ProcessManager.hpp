@@ -28,12 +28,25 @@ class ProcessManager {
     std::vector<Individual> selectParents(const std::vector<Individual> &population);
     std::pair<Individual, Individual> crossover(const Individual &parent1, const Individual &parent2);
     Individual mutate(const Individual &individual, double mutationRate);
+    std::vector<Individual> tournamentSelection(const std::vector<Individual> &population, size_t numToSelect);
 
     Individual findBestIndividual(const std::vector<Individual> &population);
 
     void generateOutput();
 
+    // Genetic algorithm parameters
     static const int POPULATION_SIZE;
+    static const int MAX_GENERATIONS;
+    static const double MUTATION_RATE;
+    static const double ELITISM_RATE;
+    static const double CROSSOVER_RATE;
+    static const int TOURNAMENT_SIZE;
+
     std::vector<Individual> population_;
     Individual bestSolution_;
+
+    std::vector<Individual> hallOfFame_; // Stocke les meilleurs individus
+    const size_t HALL_OF_FAME_SIZE = 10;
+
+    void updateHallOfFame(const Individual &individual);
 };
