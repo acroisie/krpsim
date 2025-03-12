@@ -2,7 +2,7 @@
 #include <string>
 
 class Lexer {
-public:
+  public:
     explicit Lexer(const std::string &input);
 
     void skipWhitespace();
@@ -12,7 +12,7 @@ public:
     std::string nextIdentifier();
     int nextInteger();
 
-private:
+  private:
     const std::string &input_;
     size_t pos_;
 };

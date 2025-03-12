@@ -1,10 +1,10 @@
-#include "Parser.hpp"
 #include "Config.hpp"
+#include "Parser.hpp"
 #include "ProcessManager.hpp"
-#include <iostream>
 #include <cstdlib>
+#include <iostream>
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <filename> <delay>" << std::endl;
         return 1;

@@ -1,7 +1,7 @@
 #include "Lexer.hpp"
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
-#include <cctype>
 
 Lexer::Lexer(const std::string &input) : input_(input), pos_(0) {}
 
@@ -22,8 +22,7 @@ char Lexer::peek() {
 void Lexer::expect(char c) {
     skipWhitespace();
     if (peek() != c) {
-        throw std::runtime_error("Expected '" + std::string(1, c) +
-                                 "' at position " + std::to_string(pos_));
+        throw std::runtime_error("Expected '" + std::string(1, c) + "' at position " + std::to_string(pos_));
     }
     ++pos_;
 }
@@ -41,8 +40,7 @@ std::string Lexer::nextIdentifier() {
     skipWhitespace();
     size_t start = pos_;
     while (pos_ < input_.size() &&
-           (std::isalnum(static_cast<unsigned char>(input_[pos_])) ||
-            input_[pos_] == '_' || input_[pos_] == '-')) {
+           (std::isalnum(static_cast<unsigned char>(input_[pos_])) || input_[pos_] == '_' || input_[pos_] == '-')) {
         ++pos_;
     }
     if (start == pos_) {
@@ -54,18 +52,15 @@ std::string Lexer::nextIdentifier() {
 int Lexer::nextInteger() {
     skipWhitespace();
     size_t start = pos_;
-    if (pos_ >= input_.size() ||
-        !std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+    if (pos_ >= input_.size() || !std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
         throw std::runtime_error("Expecting integer at position " + std::to_string(pos_));
     }
-    while (pos_ < input_.size() &&
-           std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+    while (pos_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
         ++pos_;
     }
     try {
         return std::stoi(input_.substr(start, pos_ - start));
     } catch (...) {
-        throw std::runtime_error("Invalid integer format at position " +
-                                 std::to_string(pos_));
+        throw std::runtime_error("Invalid integer format at position " + std::to_string(pos_));
     }
 }

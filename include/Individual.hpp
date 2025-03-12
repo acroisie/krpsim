@@ -1,10 +1,10 @@
 #pragma once
-#include <vector>
-#include <string>
 #include <limits>
+#include <string>
+#include <vector>
 
 class Individual {
-public:
+  public:
     Individual();
     explicit Individual(const std::vector<std::string> &processSequence);
 

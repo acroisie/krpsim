@@ -1,8 +1,8 @@
 #pragma once
+#include <algorithm>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <algorithm>
 
 inline std::string trim(const std::string &str) {
     const auto strBegin = str.find_first_not_of(" \t");

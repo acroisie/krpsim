@@ -5,8 +5,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-Parser::Parser(const std::string &filename)
-    : filename_(filename), optimizeFound_(false) {}
+Parser::Parser(const std::string &filename) : filename_(filename), optimizeFound_(false) {}
 
 bool Parser::parse(Config &config) {
     std::ifstream file(filename_);
