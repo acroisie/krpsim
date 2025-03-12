@@ -3,58 +3,69 @@
 #include <stdexcept>
 #include <cctype>
 
-using namespace std;
-
-Lexer::Lexer(const string& input) : input_(input), pos_(0) {}
+Lexer::Lexer(const std::string &input) : input_(input), pos_(0) {}
 
 void Lexer::skipWhitespace() {
-    while (pos_ < input_.size() && isspace(input_[pos_]))
+    while (pos_ < input_.size() && isspace(static_cast<unsigned char>(input_[pos_]))) {
         ++pos_;
+    }
 }
 
 char Lexer::peek() {
     skipWhitespace();
-    return (pos_ < input_.size()) ? input_[pos_] : '\0';
+    if (pos_ < input_.size()) {
+        return input_[pos_];
+    }
+    return '\0';
 }
 
 void Lexer::expect(char c) {
     skipWhitespace();
     if (peek() != c) {
-        ostringstream oss;
-        oss << "Expected '" << c << "' at position " << pos_;
-        throw runtime_error(oss.str());
+        throw std::runtime_error("Expected '" + std::string(1, c) +
+                                 "' at position " + std::to_string(pos_));
     }
     ++pos_;
 }
 
 bool Lexer::match(char c) {
     skipWhitespace();
-    if (peek() == c) { ++pos_; return true; }
+    if (peek() == c) {
+        ++pos_;
+        return true;
+    }
     return false;
 }
 
-string Lexer::nextIdentifier() {
+std::string Lexer::nextIdentifier() {
     skipWhitespace();
     size_t start = pos_;
-    while (pos_ < input_.size() && (isalnum(input_[pos_]) || input_[pos_] == '_' || input_[pos_] == '-'))
+    while (pos_ < input_.size() &&
+           (std::isalnum(static_cast<unsigned char>(input_[pos_])) ||
+            input_[pos_] == '_' || input_[pos_] == '-')) {
         ++pos_;
-    if (start == pos_)
-        throw runtime_error("Expecting identifier at position " + to_string(pos_));
+    }
+    if (start == pos_) {
+        throw std::runtime_error("Expecting identifier at position " + std::to_string(pos_));
+    }
     return input_.substr(start, pos_ - start);
 }
 
 int Lexer::nextInteger() {
     skipWhitespace();
     size_t start = pos_;
-    if (pos_ >= input_.size() || !isdigit(input_[pos_]))
-        throw runtime_error("Expecting integer at position " + to_string(pos_));
-    while (pos_ < input_.size() && isdigit(input_[pos_]))
+    if (pos_ >= input_.size() ||
+        !std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+        throw std::runtime_error("Expecting integer at position " + std::to_string(pos_));
+    }
+    while (pos_ < input_.size() &&
+           std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
         ++pos_;
-    if (start == pos_)
-        throw runtime_error("Expecting integer at position " + to_string(pos_));
+    }
     try {
-        return stoi(input_.substr(start, pos_ - start));
+        return std::stoi(input_.substr(start, pos_ - start));
     } catch (...) {
-        throw runtime_error("Invalid format for integer at position " + to_string(pos_));
+        throw std::runtime_error("Invalid integer format at position " +
+                                 std::to_string(pos_));
     }
 }
