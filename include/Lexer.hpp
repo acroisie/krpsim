@@ -3,7 +3,8 @@
 
 class Lexer {
 public:
-    explicit Lexer(const std::string& input);
+    explicit Lexer(const std::string &input);
+
     void skipWhitespace();
     char peek();
     void expect(char c);
@@ -12,6 +13,6 @@ public:
     int nextInteger();
 
 private:
-    const std::string& input_;
+    const std::string &input_;
     size_t pos_;
 };
