@@ -71,54 +71,34 @@ Individual ProcessManager::findBestIndividual(const std::vector<Individual>& pop
 }
 
 void ProcessManager::runGeneticAlgorithm() {
-    std::cout << "Running genetic algorithm... (runGeneticAlgorithm() START)" << std::endl;
-    
-    // Initialize population with random process sequences
     initializePopulation();
-    std::cout << "Initial population generated." << std::endl;
-    
-    // Set parameters for the genetic algorithm
-    const int NUM_GENERATIONS = 20; // Increase from 5 to 20
+
+    const int NUM_GENERATIONS = 20;
     const double MUTATION_RATE = 0.1;
-    
-    std::cout << "Starting evolution over " << NUM_GENERATIONS << " generations..." << std::endl;
-    
-    // Evaluate fitness of the initial population
+        
     evaluateFitness();
     
     for (int generation = 0; generation < NUM_GENERATIONS; ++generation) {
-        std::cout << "--- Generation " << generation << " ---" << std::endl;
-        
-        // Select parents based on fitness
-        std::vector<Individual> parents = selectParents(population_);
-        std::cout << "Parents selected." << std::endl;
-        
-        // Create new population through crossover and mutation
+        std::vector<Individual> parents = selectParents(population_);  
         std::vector<Individual> newPopulation;
         
-        // Elitism: Keep the best individual
         if (!population_.empty()) {
             Individual bestIndividual = findBestIndividual(population_);
             newPopulation.push_back(bestIndividual);
         }
         
-        // Generate children until we fill the population
         while (newPopulation.size() < population_.size() && parents.size() >= 2) {
-            // Select two parents
             size_t idx1 = rand() % parents.size();
             size_t idx2 = rand() % parents.size();
             while (idx2 == idx1 && parents.size() > 1) {
                 idx2 = rand() % parents.size();
             }
             
-            // Perform crossover
             auto children = crossover(parents[idx1], parents[idx2]);
             
-            // Apply mutation
             Individual mutatedChild1 = mutate(children.first, MUTATION_RATE);
             Individual mutatedChild2 = mutate(children.second, MUTATION_RATE);
             
-            // Add children to new population
             if (newPopulation.size() < population_.size()) {
                 newPopulation.push_back(mutatedChild1);
             }
@@ -127,29 +107,24 @@ void ProcessManager::runGeneticAlgorithm() {
             }
         }
         
-        // Replace old population with new population
         if (!newPopulation.empty()) {
             population_ = newPopulation;
         } else {
             std::cout << "Warning: New population is empty!" << std::endl;
         }
         
-        // Evaluate fitness of the new population
         evaluateFitness();
     }
     
-    // Find the best solution
     if (!population_.empty()) {
         bestSolution_ = findBestIndividual(population_);
-        std::cout << "Genetic algorithm completed. Best solution found with fitness: " 
-                  << bestSolution_.fitness << std::endl;
+        generateOutput();
     } else {
         std::cout << "Error: Population is empty after evolution!" << std::endl;
     }
 }
 
 double ProcessManager::calculateFitness(Individual &individual) {
-    // Initialize stocks and clear logs
     currentStocks_.clear();
     for (const auto &stock : config_.getStocks()) {
         currentStocks_[stock.name] = stock.quantity;
@@ -448,38 +423,22 @@ vector<Individual> ProcessManager::mutationPopulation(vector<Individual>& popula
     return mutatedPopulation;
 }
 
-vector<const Process*> ProcessManager::getRunnableProcesses() {
-    vector<const Process*> runnable;
-    cout << "    getRunnableProcesses() - Current Stocks: ["; // Log current stocks at start
-    for (const auto& pair : currentStocks_) {
-        cout << pair.first << ":" << pair.second << ", ";
-    }
-    cout << "]" << endl;
+std::vector<const Process*> ProcessManager::getRunnableProcesses() {
+    std::vector<const Process*> runnable;
 
     for (const auto &process : config_.getProcesses()) {
-        cout << "    Checking process: " << process.name << endl; // Log process being checked
         bool canRun = true;
         for (const auto &input : process.inputs) {
-            cout << "      Requires input: " << input.first << ":" << input.second << endl; // Log required input
-            if (currentStocks_.count(input.first) == 0) {
+            if (currentStocks_.count(input.first) == 0 || 
+                currentStocks_[input.first] < input.second) {
                 canRun = false;
-                cout << "      Stock '" << input.first << "' not found in currentStocks_." << endl; // Log stock not found
-                break;
-            }
-            if (currentStocks_[input.first] < input.second) {
-                canRun = false;
-                cout << "      Not enough stock '" << input.first << "'. Available: " << currentStocks_[input.first] << ", Required: " << input.second << endl; // Log insufficient stock
                 break;
             }
         }
         if (canRun) {
             runnable.push_back(&process);
-            cout << "    Process '" << process.name << "' is runnable." << endl; // Log runnable process
-        } else {
-            cout << "    Process '" << process.name << "' is NOT runnable." << endl; // Log non-runnable process
         }
     }
-    cout << "    getRunnableProcesses() - Runnable processes count: " << runnable.size() << endl; // Log count of runnable processes
     return runnable;
 }
 
