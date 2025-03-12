@@ -1,12 +1,13 @@
 #pragma once
 #include <vector>
 #include <string>
+#include <limits>
 
 class Individual {
 public:
-	Individual();
-	Individual(const std::vector<std::string> &processSequence);
+    Individual();
+    explicit Individual(const std::vector<std::string> &processSequence);
 
-	std::vector<std::string> processSequence;
-	double fitness;
+    std::vector<std::string> processSequence;
+    double fitness;
 };
