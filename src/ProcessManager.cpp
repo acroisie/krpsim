@@ -1,13 +1,11 @@
 #include "ProcessManager.hpp"
 #include "Config.hpp"
-#include "Individual.hpp"
 #include "Process.hpp"
+#include "Individual.hpp"
 #include <iostream>
-#include <limits>
-#include <vector>
-#include <string>
-#include <algorithm>
 #include <random>
+#include <algorithm>
+#include <limits>
 
 using namespace std;
 
@@ -22,105 +20,31 @@ ProcessManager::ProcessManager(const Config &config, int delayLimit)
 
 void ProcessManager::initializePopulation() {
     population_.resize(POPULATION_SIZE);
-    vector<string> availableProcessNames;
-    for (const auto &process : config_.getProcesses()) {
-        availableProcessNames.push_back(process.name);
+    vector<string> allProcessNames;
+    for (const auto &proc : config_.getProcesses()) {
+        allProcessNames.push_back(proc.name);
     }
+
     random_device rd;
-    mt19937 generator(rd());
-    uniform_int_distribution<> lengthDistribution(1, delayLimit_);
-    uniform_int_distribution<> processDistribution(0, availableProcessNames.size() - 1);
+    mt19937 gen(rd());
+    uniform_int_distribution<> lengthDist(1, delayLimit_);
+    uniform_int_distribution<> procDist(0, (int)allProcessNames.size() - 1);
+
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        vector<string> randomSequence;
-        int sequenceLength = lengthDistribution(generator);
-        for (int j = 0; j < sequenceLength; ++j) {
-            if (!availableProcessNames.empty()) {
-                int processIndex = processDistribution(generator);
-                randomSequence.push_back(availableProcessNames[processIndex]);
-            }
+        int seqLen = lengthDist(gen);
+        vector<string> sequence;
+        sequence.reserve(seqLen);
+
+        for (int j = 0; j < seqLen; ++j) {
+            sequence.push_back(allProcessNames[procDist(gen)]);
         }
-        population_[i] = Individual(randomSequence);
+        population_[i] = Individual(sequence);
     }
 }
 
 void ProcessManager::evaluateFitness() {
-    for (int i = 0; i < POPULATION_SIZE; ++i) {
-        population_[i].fitness = calculateFitness(population_[i]);
-    }
-}
-
-vector<Individual> ProcessManager::selection() {
-    vector<Individual> parents = selectParents(population_);
-    cout << "Parents selected." << endl;
-    return parents;
-}
-
-Individual ProcessManager::findBestIndividual(const std::vector<Individual>& population) {
-    if (population.empty()) {
-        return Individual(std::vector<std::string>());
-    }
-    
-    Individual best = population[0];
-    for (const auto& individual : population) {
-        if (individual.fitness > best.fitness) {
-            best = individual;
-        }
-    }
-    
-    return best;
-}
-
-void ProcessManager::runGeneticAlgorithm() {
-    initializePopulation();
-
-    const int NUM_GENERATIONS = 20;
-    const double MUTATION_RATE = 0.1;
-        
-    evaluateFitness();
-    
-    for (int generation = 0; generation < NUM_GENERATIONS; ++generation) {
-        std::vector<Individual> parents = selectParents(population_);  
-        std::vector<Individual> newPopulation;
-        
-        if (!population_.empty()) {
-            Individual bestIndividual = findBestIndividual(population_);
-            newPopulation.push_back(bestIndividual);
-        }
-        
-        while (newPopulation.size() < population_.size() && parents.size() >= 2) {
-            size_t idx1 = rand() % parents.size();
-            size_t idx2 = rand() % parents.size();
-            while (idx2 == idx1 && parents.size() > 1) {
-                idx2 = rand() % parents.size();
-            }
-            
-            auto children = crossover(parents[idx1], parents[idx2]);
-            
-            Individual mutatedChild1 = mutate(children.first, MUTATION_RATE);
-            Individual mutatedChild2 = mutate(children.second, MUTATION_RATE);
-            
-            if (newPopulation.size() < population_.size()) {
-                newPopulation.push_back(mutatedChild1);
-            }
-            if (newPopulation.size() < population_.size()) {
-                newPopulation.push_back(mutatedChild2);
-            }
-        }
-        
-        if (!newPopulation.empty()) {
-            population_ = newPopulation;
-        } else {
-            std::cout << "Warning: New population is empty!" << std::endl;
-        }
-        
-        evaluateFitness();
-    }
-    
-    if (!population_.empty()) {
-        bestSolution_ = findBestIndividual(population_);
-        generateOutput();
-    } else {
-        std::cout << "Error: Population is empty after evolution!" << std::endl;
+    for (auto &indiv : population_) {
+        indiv.fitness = calculateFitness(indiv);
     }
 }
 
@@ -132,353 +56,362 @@ double ProcessManager::calculateFitness(Individual &individual) {
     executionLogs_.clear();
     currentCycle_ = 0;
 
-    // Track running processes with their completion times
-    struct RunningProcess
-    {
+    struct RunningProcess {
         const Process *process;
         int completionCycle;
     };
     vector<RunningProcess> runningProcesses;
 
-    size_t processIndex = 0;
-    while (currentCycle_ < delayLimit_ && processIndex < individual.processSequence.size())
-    {
-        // First, check if any processes have completed at this cycle
+    size_t index = 0;
+    while (currentCycle_ < delayLimit_ && index < individual.processSequence.size()) {
+        // Libérer les process terminés
         auto it = runningProcesses.begin();
-        while (it != runningProcesses.end())
-        {
-            if (it->completionCycle <= currentCycle_)
-            {
-                // Process completed, apply outputs
-                for (const auto &output : it->process->outputs)
-                {
-                    currentStocks_[output.first] += output.second;
+        while (it != runningProcesses.end()) {
+            if (it->completionCycle <= currentCycle_) {
+                // On applique les outputs
+                for (const auto &out : it->process->outputs) {
+                    currentStocks_[out.first] += out.second;
                 }
                 it = runningProcesses.erase(it);
             }
-            else
-            {
+            else {
                 ++it;
             }
         }
 
-        // Try to execute the current process in the sequence
-        string currentProcessName = individual.processSequence[processIndex];
-        vector<const Process *> runnableProcesses = getRunnableProcesses();
+        // Tenter d’exécuter le process courant
+        const string &procName = individual.processSequence[index];
+        vector<const Process *> runnable = getRunnableProcesses();
+        const Process *chosen = nullptr;
 
-        const Process *processToExecute = nullptr;
-        for (const auto &proc : runnableProcesses)
-        {
-            if (proc->name == currentProcessName)
-            {
-                processToExecute = proc;
+        for (auto p : runnable) {
+            if (p->name == procName) {
+                chosen = p;
                 break;
             }
         }
 
-        if (processToExecute)
-        {
-            // Consume inputs immediately
-            for (const auto &input : processToExecute->inputs)
-            {
-                currentStocks_[input.first] -= input.second;
+        if (chosen) {
+            // Consommer les inputs
+            for (const auto &in : chosen->inputs) {
+                currentStocks_[in.first] -= in.second;
             }
-
-            // Schedule completion
-            runningProcesses.push_back({processToExecute,
-                                        currentCycle_ + processToExecute->nbCycle});
-
-            // Log the start of the process
-            executionLogs_.push_back({currentCycle_, processToExecute->name});
-
-            // Move to next process in sequence
-            processIndex++;
+            runningProcesses.push_back({chosen, currentCycle_ + chosen->nbCycle});
+            executionLogs_.push_back({currentCycle_, chosen->name});
+            ++index;
         }
-        else
-        {
-            // Current process can't run, either due to resources or still running
-            // Advance time to the next completion or just increment by 1
-            if (!runningProcesses.empty())
-            {
-                int nextCompletionTime = delayLimit_;
-                for (const auto &rp : runningProcesses)
+        else {
+            // Si on ne peut pas le lancer
+            if (!runningProcesses.empty()) {
+                int nextCompletion = delayLimit_;
+                for (auto &rp : runningProcesses)
                 {
-                    nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+                    nextCompletion = min(nextCompletion, rp.completionCycle);
                 }
-                currentCycle_ = nextCompletionTime;
-            }
-            else
-            {
-                // No processes running, try next process
-                processIndex++;
-                currentCycle_++;
+                currentCycle_ = nextCompletion;
+            } else {
+                // Personne ne tourne, on avance
+                ++index;
+                ++currentCycle_;
             }
         }
     }
 
-    // Make sure all running processes complete (or reach the delay limit)
-    while (!runningProcesses.empty() && currentCycle_ < delayLimit_)
-    {
-        int nextCompletionTime = delayLimit_;
-        for (const auto &rp : runningProcesses)
-        {
-            nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+    // Laisser finir les process en cours
+    while (!runningProcesses.empty() && currentCycle_ < delayLimit_) {
+        int nextCompletion = delayLimit_;
+        for (auto &rp : runningProcesses) {
+            nextCompletion = min(nextCompletion, rp.completionCycle);
         }
-        currentCycle_ = nextCompletionTime;
+        currentCycle_ = nextCompletion;
 
         auto it = runningProcesses.begin();
-        while (it != runningProcesses.end())
-        {
-            if (it->completionCycle <= currentCycle_)
-            {
-                // Process completed, apply outputs
-                for (const auto &output : it->process->outputs)
-                {
-                    currentStocks_[output.first] += output.second;
+        while (it != runningProcesses.end()) {
+            if (it->completionCycle <= currentCycle_) {
+                for (const auto &out : it->process->outputs) {
+                    currentStocks_[out.first] += out.second;
                 }
                 it = runningProcesses.erase(it);
-            }
-            else
-            {
+            } else {
                 ++it;
             }
         }
     }
 
-    // Calculate fitness as before
-    double fitnessScore = 0.0;
-    const vector<string>& optimizeGoals = config_.getOptimizeGoal();
-    if (!optimizeGoals.empty()) {
-        string goal = optimizeGoals[0];
-        if (currentStocks_.count(goal) > 0)
-            fitnessScore = currentStocks_[goal];
-        else if (goal == "time")
-            fitnessScore = -currentCycle_;
+    double fitness = 0.0;
+    const auto &goals = config_.getOptimizeGoal();
+    if (!goals.empty())
+    {
+        // On gère un seul objectif principal ou le premier trouvé
+        std::string goal = goals[0];
+        if (goal == "time")
+        {
+            fitness = -static_cast<double>(currentCycle_);
+        }
         else
-            fitnessScore = numeric_limits<double>::lowest();
-    } else {
-        fitnessScore = 0.0;
-    }
-    return fitnessScore;
-}
-
-std::vector<Individual> ProcessManager::selectParents(const std::vector<Individual>& population) {
-    std::vector<Individual> parents;
-    if (population.empty()) {
-        return parents;
-    }
-    
-    // Find best individuals and total fitness
-    double totalFitness = 0.0;
-    double minFitness = std::numeric_limits<double>::max();
-    
-    for (const auto& individual : population) {
-        totalFitness += individual.fitness;
-        if (individual.fitness < minFitness) {
-            minFitness = individual.fitness;
-        }
-    }
-    
-    // If all fitness values are negative or zero, shift them to positive range
-    std::vector<double> adjustedFitness;
-    if (totalFitness <= 0.0) {
-        double shift = std::abs(minFitness) + 1.0;
-        totalFitness = 0.0;
-        for (const auto& individual : population) {
-            double adjusted = individual.fitness + shift;
-            adjustedFitness.push_back(adjusted);
-            totalFitness += adjusted;
-        }
-    } else {
-        for (const auto& individual : population) {
-            adjustedFitness.push_back(individual.fitness);
-        }
-    }
-    
-    // Select parents using roulette wheel selection
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_real_distribution<> distribution(0.0, totalFitness);
-    
-    int numParentsToSelect = std::min(POPULATION_SIZE, static_cast<int>(population.size()));
-    for (int i = 0; i < numParentsToSelect; ++i) {
-        double randomValue = distribution(generator);
-        double cumulativeProbability = 0.0;
-        
-        for (size_t j = 0; j < population.size(); ++j) {
-            cumulativeProbability += adjustedFitness[j];
-            if (randomValue <= cumulativeProbability) {
-                parents.push_back(population[j]);
-                break;
+        {
+            // Maximiser la quantité d’un stock
+            if (currentStocks_.count(goal))
+            {
+                fitness = currentStocks_[goal];
+            }
+            else
+            {
+                fitness = numeric_limits<double>::lowest();
             }
         }
-        
-        // Ensure a parent is selected even if rounding errors occur
-        if (parents.size() <= static_cast<size_t>(i) && !population.empty()) {
-            parents.push_back(population[0]);
-        }
     }
-    
-    return parents;
+    return fitness;
 }
 
-std::pair<Individual, Individual> ProcessManager::crossover(const Individual& parent1, const Individual& parent2) {
-    if (parent1.processSequence.empty() || parent2.processSequence.empty()) {
-        return std::make_pair(parent1, parent2); // Return copies of parents if either is empty
-    }
-
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    
-    // Calculate crossover point safely
-    size_t minSize = std::min(parent1.processSequence.size(), parent2.processSequence.size());
-    
-    // If both sequences are very short, handle specially
-    if (minSize == 0) {
-        return std::make_pair(parent1, parent2);
-    }
-    
-    // Generate crossover point between 0 and minSize-1
-    std::uniform_int_distribution<> distribution(0, minSize - 1);
-    size_t crossoverPoint = distribution(generator);
-    
-    // Create new sequences
-    std::vector<std::string> child1Sequence;
-    std::vector<std::string> child2Sequence;
-    
-    // First part of child1 comes from parent1
-    for (size_t i = 0; i < crossoverPoint && i < parent1.processSequence.size(); ++i) {
-        child1Sequence.push_back(parent1.processSequence[i]);
-    }
-    
-    // Second part of child1 comes from parent2
-    for (size_t i = crossoverPoint; i < parent2.processSequence.size(); ++i) {
-        child1Sequence.push_back(parent2.processSequence[i]);
-    }
-    
-    // First part of child2 comes from parent2
-    for (size_t i = 0; i < crossoverPoint && i < parent2.processSequence.size(); ++i) {
-        child2Sequence.push_back(parent2.processSequence[i]);
-    }
-    
-    // Second part of child2 comes from parent1
-    for (size_t i = crossoverPoint; i < parent1.processSequence.size(); ++i) {
-        child2Sequence.push_back(parent1.processSequence[i]);
-    }
-    
-    return std::make_pair(Individual(child1Sequence), Individual(child2Sequence));
-}
-
-vector<Individual> ProcessManager::crossoverPopulation(const vector<Individual>& parents, double crossoverRate) {
-    vector<Individual> nextGeneration;
-    random_device rd;
-    mt19937 generator(rd());
-    uniform_real_distribution<> probabilityDistribution(0.0, 1.0);
-    for (int i = 0; i < POPULATION_SIZE / 2; ++i) {
-        if (probabilityDistribution(generator) < crossoverRate) {
-            pair<Individual, Individual> children = crossover(parents[i % parents.size()], parents[(i + 1) % parents.size()]);
-            nextGeneration.push_back(children.first);
-            nextGeneration.push_back(children.second);
-        } else {
-            nextGeneration.push_back(parents[i % parents.size()]);
-            nextGeneration.push_back(parents[(i + 1) % parents.size()]);
-        }
-    }
-    return nextGeneration;
-}
-
-Individual ProcessManager::mutate(const Individual& individual, double mutationRate) {
-    // Get available processes
-    std::vector<Process> availableProcesses = config_.getProcesses();
-    if (availableProcesses.empty() || individual.processSequence.empty()) {
-        return Individual(individual.processSequence);
-    }
-    
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_real_distribution<> probabilityDistribution(0.0, 1.0);
-    
-    std::vector<std::string> mutatedSequence = individual.processSequence;
-    
-    // For each position in the sequence, decide if it should mutate
-    for (size_t i = 0; i < mutatedSequence.size(); ++i) {
-        if (probabilityDistribution(generator) < mutationRate) {
-            // Choose a random process
-            std::uniform_int_distribution<> processDistribution(0, availableProcesses.size() - 1);
-            int processIndex = processDistribution(generator);
-            
-            // Replace the process at position i
-            mutatedSequence[i] = availableProcesses[processIndex].name;
-        }
-    }
-    
-    return Individual(mutatedSequence);
-}
-
-vector<Individual> ProcessManager::mutationPopulation(vector<Individual>& population, double mutationRate) {
-    vector<Individual> mutatedPopulation;
-    for (Individual& individual : population) {
-        mutatedPopulation.push_back(mutate(individual, mutationRate));
-    }
-    return mutatedPopulation;
-}
-
-std::vector<const Process*> ProcessManager::getRunnableProcesses() {
-    std::vector<const Process*> runnable;
-
-    for (const auto &process : config_.getProcesses()) {
+vector<const Process *> ProcessManager::getRunnableProcesses()
+{
+    vector<const Process *> result;
+    for (const auto &proc : config_.getProcesses())
+    {
         bool canRun = true;
-        for (const auto &input : process.inputs) {
-            if (currentStocks_.count(input.first) == 0 || 
-                currentStocks_[input.first] < input.second) {
+        for (const auto &in : proc.inputs)
+        {
+            if (currentStocks_[in.first] < in.second)
+            {
                 canRun = false;
                 break;
             }
         }
-        if (canRun) {
-            runnable.push_back(&process);
+        if (canRun)
+        {
+            result.push_back(&proc);
         }
     }
-    return runnable;
+    return result;
 }
 
-bool ProcessManager::executeProcess(const Process* process) {
+bool ProcessManager::executeProcess(const Process *process)
+{
     if (!process)
         return false;
-    for (const auto &input : process->inputs) {
-        currentStocks_[input.first] -= input.second;
-        if (currentStocks_[input.first] < 0)
+    for (const auto &in : process->inputs)
+    {
+        currentStocks_[in.first] -= in.second;
+        if (currentStocks_[in.first] < 0)
+        {
             return false;
+        }
     }
-    for (const auto &output : process->outputs) {
-        currentStocks_[output.first] += output.second;
+    for (const auto &out : process->outputs)
+    {
+        currentStocks_[out.first] += out.second;
     }
     return true;
 }
 
-void ProcessManager::generateOutput() {
-    // Find the best individual
-    double bestFitness = numeric_limits<double>::lowest();
-    const Individual *bestIndividual = nullptr;
-    for (const auto &indiv : population_)
+vector<Individual> ProcessManager::selectParents(const vector<Individual> &population)
+{
+    vector<Individual> parents;
+    if (population.empty()) {
+        return parents;
+    }
+
+    double totalFitness = 0.0;
+    double minFitness = numeric_limits<double>::max();
+
+    for (const auto &indiv : population)
     {
-        if (indiv.fitness > bestFitness)
+        totalFitness += indiv.fitness;
+        if (indiv.fitness < minFitness)
         {
-            bestFitness = indiv.fitness;
-            bestIndividual = &indiv;
+            minFitness = indiv.fitness;
         }
     }
 
-    if (!bestIndividual)
-    {
-        cout << "\nNo best individual found in final population." << endl;
-        return;
+    // On shift si jamais toutes les fitness sont négatives
+    vector<double> adjustedFitness;
+    adjustedFitness.reserve(population.size());
+
+    if (totalFitness <= 0.0) {
+        double shift = std::abs(minFitness) + 1.0;
+        totalFitness = 0.0;
+        for (const auto &ind : population)
+        {
+            double adj = ind.fitness + shift;
+            adjustedFitness.push_back(adj);
+            totalFitness += adj;
+        }
+    } else {
+        for (const auto &ind : population)
+        {
+            adjustedFitness.push_back(ind.fitness);
+        }
     }
 
-    // Re-run the simulation with the best individual to generate accurate logs
-    cout << "\nRe-running simulation with best individual..." << endl;
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<> dist(0.0, totalFitness);
 
-    // Clear stocks and logs
+    int nbParents = min(POPULATION_SIZE, (int)population.size());
+    for (int i = 0; i < nbParents; ++i)
+    {
+        double r = dist(gen);
+        double accum = 0.0;
+        for (size_t j = 0; j < population.size(); ++j) {
+            accum += adjustedFitness[j];
+            if (r <= accum)
+            {
+                parents.push_back(population[j]);
+                break;
+            }
+        }
+        if ((int)parents.size() <= i && !population.empty())
+        {
+            parents.push_back(population[0]);
+        }
+    }
+    return parents;
+}
+
+pair<Individual, Individual>
+ProcessManager::crossover(const Individual &parent1, const Individual &parent2)
+{
+    if (parent1.processSequence.empty() || parent2.processSequence.empty()) {
+        return make_pair(parent1, parent2);
+    }
+    random_device rd;
+    mt19937 gen(rd());
+    size_t minSize = min(parent1.processSequence.size(), parent2.processSequence.size());
+    if (minSize == 0) {
+        return make_pair(parent1, parent2);
+    }
+
+    uniform_int_distribution<> dist(0, (int)minSize - 1);
+    size_t crossoverPoint = dist(gen);
+
+    vector<string> child1, child2;
+    child1.reserve(parent1.processSequence.size() + parent2.processSequence.size());
+    child2.reserve(parent1.processSequence.size() + parent2.processSequence.size());
+
+    for (size_t i = 0; i < crossoverPoint; ++i)
+    {
+        if (i < parent1.processSequence.size())
+        {
+            child1.push_back(parent1.processSequence[i]);
+        }
+        if (i < parent2.processSequence.size())
+        {
+            child2.push_back(parent2.processSequence[i]);
+        }
+    }
+    for (size_t i = crossoverPoint; i < parent2.processSequence.size(); ++i) {
+        child1.push_back(parent2.processSequence[i]);
+    }
+    for (size_t i = crossoverPoint; i < parent1.processSequence.size(); ++i)
+    {
+        child2.push_back(parent1.processSequence[i]);
+    }
+
+    return make_pair(Individual(child1), Individual(child2));
+}
+
+Individual ProcessManager::mutate(const Individual &individual, double mutationRate)
+{
+    auto allProcs = config_.getProcesses();
+    if (allProcs.empty() || individual.processSequence.empty())
+    {
+        return individual;
+    }
+
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<> distProb(0.0, 1.0);
+    uniform_int_distribution<> distProc(0, (int)allProcs.size() - 1);
+
+    vector<string> mutatedSeq = individual.processSequence;
+    for (size_t i = 0; i < mutatedSeq.size(); ++i)
+    {
+        if (distProb(gen) < mutationRate)
+        {
+            mutatedSeq[i] = allProcs[distProc(gen)].name;
+        }
+    }
+    return Individual(mutatedSeq);
+}
+
+void ProcessManager::runGeneticAlgorithm()
+{
+    initializePopulation();
+    const int NUM_GENERATIONS = 20;
+    const double MUTATION_RATE = 0.1;
+
+    evaluateFitness();
+
+    for (int generation = 0; generation < NUM_GENERATIONS; ++generation)
+    {
+        vector<Individual> parents = selectParents(population_);
+        vector<Individual> newPopulation;
+
+        if (!population_.empty())
+        {
+            auto bestInPop = findBestIndividual(population_);
+            newPopulation.push_back(bestInPop);
+        }
+
+        while (newPopulation.size() < population_.size() && parents.size() >= 2)
+        {
+            size_t idx1 = rand() % parents.size();
+            size_t idx2 = rand() % parents.size();
+            while (idx2 == idx1 && parents.size() > 1)
+            {
+                idx2 = rand() % parents.size();
+            }
+
+            auto children = crossover(parents[idx1], parents[idx2]);
+            auto child1 = mutate(children.first, MUTATION_RATE);
+            auto child2 = mutate(children.second, MUTATION_RATE);
+
+            if (newPopulation.size() < population_.size())
+            {
+                newPopulation.push_back(child1);
+            }
+            if (newPopulation.size() < population_.size())
+            {
+                newPopulation.push_back(child2);
+            }
+        }
+
+        if (!newPopulation.empty())
+        {
+            population_ = newPopulation;
+        }
+        evaluateFitness();
+    }
+
+    if (!population_.empty())
+    {
+        bestSolution_ = findBestIndividual(population_);
+        generateOutput();
+    }
+    else
+    {
+        cout << "Error: Population is empty after evolution!" << endl;
+    }
+}
+
+Individual ProcessManager::findBestIndividual(const vector<Individual> &population)
+{
+    Individual best = population.front();
+    for (const auto &ind : population)
+    {
+        if (ind.fitness > best.fitness)
+        {
+            best = ind;
+        }
+    }
+    return best;
+}
+
+void ProcessManager::generateOutput()
+{
+    // On reprend la simulation avec bestSolution_ pour afficher les logs
+    // On reset les stocks
     currentStocks_.clear();
     for (const auto &stock : config_.getStocks())
     {
@@ -487,7 +420,6 @@ void ProcessManager::generateOutput() {
     executionLogs_.clear();
     currentCycle_ = 0;
 
-    // Simulate the best individual's process sequence
     struct RunningProcess
     {
         const Process *process;
@@ -495,19 +427,19 @@ void ProcessManager::generateOutput() {
     };
     vector<RunningProcess> runningProcesses;
 
-    size_t processIndex = 0;
-    while (currentCycle_ < delayLimit_ && processIndex < bestIndividual->processSequence.size())
+    const auto &sequence = bestSolution_.processSequence;
+    size_t idx = 0;
+
+    while (currentCycle_ < delayLimit_ && idx < sequence.size())
     {
-        // Check for completed processes at this cycle
         auto it = runningProcesses.begin();
         while (it != runningProcesses.end())
         {
             if (it->completionCycle <= currentCycle_)
             {
-                // Process completed, apply outputs
-                for (const auto &output : it->process->outputs)
+                for (auto &out : it->process->outputs)
                 {
-                    currentStocks_[output.first] += output.second;
+                    currentStocks_[out.first] += out.second;
                 }
                 it = runningProcesses.erase(it);
             }
@@ -517,77 +449,65 @@ void ProcessManager::generateOutput() {
             }
         }
 
-        // Try to execute the current process in the sequence
-        const string &currentProcessName = bestIndividual->processSequence[processIndex];
-        vector<const Process *> runnableProcesses = getRunnableProcesses();
+        const string &procName = sequence[idx];
+        vector<const Process *> runnable = getRunnableProcesses();
+        const Process *chosen = nullptr;
 
-        const Process *processToExecute = nullptr;
-        for (const auto &proc : runnableProcesses)
+        for (auto &p : runnable)
         {
-            if (proc->name == currentProcessName)
+            if (p->name == procName)
             {
-                processToExecute = proc;
+                chosen = p;
                 break;
             }
         }
 
-        if (processToExecute)
+        if (chosen)
         {
-            // Consume inputs
-            for (const auto &input : processToExecute->inputs)
+            for (auto &in : chosen->inputs)
             {
-                currentStocks_[input.first] -= input.second;
+                currentStocks_[in.first] -= in.second;
             }
-
-            // Schedule completion
-            runningProcesses.push_back({processToExecute,
-                                        currentCycle_ + processToExecute->nbCycle});
-
-            // Log the process start
-            executionLogs_.push_back({currentCycle_, processToExecute->name});
-
-            processIndex++;
+            runningProcesses.push_back({chosen, currentCycle_ + chosen->nbCycle});
+            executionLogs_.push_back({currentCycle_, chosen->name});
+            ++idx;
         }
         else
         {
-            // Process can't run yet or ever
             if (!runningProcesses.empty())
             {
-                // Advance to next completion
-                int nextCompletionTime = delayLimit_;
-                for (const auto &rp : runningProcesses)
+                int nextCompletion = delayLimit_;
+                for (auto &rp : runningProcesses)
                 {
-                    nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+                    nextCompletion = min(nextCompletion, rp.completionCycle);
                 }
-                currentCycle_ = nextCompletionTime;
+                currentCycle_ = nextCompletion;
             }
             else
             {
-                // Skip to next process or advance time
-                processIndex++;
-                currentCycle_++;
+                ++idx;
+                ++currentCycle_;
             }
         }
     }
 
-    // Complete any remaining running processes
     while (!runningProcesses.empty() && currentCycle_ < delayLimit_)
     {
-        int nextCompletionTime = delayLimit_;
-        for (const auto &rp : runningProcesses)
+        int nextCompletion = delayLimit_;
+        for (auto &rp : runningProcesses)
         {
-            nextCompletionTime = min(nextCompletionTime, rp.completionCycle);
+            nextCompletion = min(nextCompletion, rp.completionCycle);
         }
-        currentCycle_ = nextCompletionTime;
+        currentCycle_ = nextCompletion;
 
         auto it = runningProcesses.begin();
         while (it != runningProcesses.end())
         {
             if (it->completionCycle <= currentCycle_)
             {
-                for (const auto &output : it->process->outputs)
+                for (auto &out : it->process->outputs)
                 {
-                    currentStocks_[output.first] += output.second;
+                    currentStocks_[out.first] += out.second;
                 }
                 it = runningProcesses.erase(it);
             }
@@ -598,16 +518,12 @@ void ProcessManager::generateOutput() {
         }
     }
 
-    // Now display accurate results in the required format
     cout << "Nice file! " << config_.getProcesses().size() << " processes, "
          << config_.getStocks().size() << " stocks, "
          << config_.getOptimizeGoal().size() << " to optimize" << endl;
 
-    cout << "Evaluating .................. done." << endl;
-    cout << "Main walk" << endl;
-
-    // Print process execution log in the required format
-    for (auto log : executionLogs_)
+    cout << "Main walk:" << endl;
+    for (auto &log : executionLogs_)
     {
         cout << log.first << ":" << log.second << endl;
     }
@@ -615,7 +531,7 @@ void ProcessManager::generateOutput() {
     cout << "no more process doable at time " << currentCycle_ << endl;
 
     cout << "Stock :" << endl;
-    for (auto stock : currentStocks_)
+    for (auto &stock : currentStocks_)
     {
         cout << stock.first << "=> " << stock.second << endl;
     }

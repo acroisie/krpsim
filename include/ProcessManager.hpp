@@ -19,23 +19,21 @@ private:
     std::vector<std::pair<int, std::string>> executionLogs_;
 
     std::vector<const Process*> getRunnableProcesses();
-    Individual findBestIndividual(const std::vector<Individual>& population);
+    bool executeProcess(const Process *process);
 
-    bool executeProcess(const Process* process);
-    void generateOutput();
-    Individual mutate(const Individual& individual, double mutationRate);
-    std::vector<Individual> mutationPopulation(std::vector<Individual>& population, double mutationRate);
     void initializePopulation();
     void evaluateFitness();
-    std::pair<Individual, Individual> crossover(const Individual& parent1, const Individual& parent2);
-    std::vector<Individual> crossoverPopulation(const std::vector<Individual>& parents, double crossoverRate);
-    std::vector<Individual> selectParents(const std::vector<Individual>& population);
 
+    double calculateFitness(Individual &individual);
+    std::vector<Individual> selectParents(const std::vector<Individual> &population);
+    std::pair<Individual, Individual> crossover(const Individual &parent1, const Individual &parent2);
+    Individual mutate(const Individual &individual, double mutationRate);
+
+    Individual findBestIndividual(const std::vector<Individual> &population);
+
+    void generateOutput();
 
     static const int POPULATION_SIZE;
     std::vector<Individual> population_;
     Individual bestSolution_;
-    std::vector<Individual> selection();
-
-    double calculateFitness(Individual &individual);
 };
