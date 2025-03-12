@@ -8,7 +8,7 @@
 class ProcessManager {
 public:
     ProcessManager(const Config &config, int delayLimit);
-    bool runGeneticAlgorithm();
+    void runGeneticAlgorithm();
 
 private:
     const Config &config_;
@@ -19,6 +19,8 @@ private:
     std::vector<std::pair<int, std::string>> executionLogs_;
 
     std::vector<const Process*> getRunnableProcesses();
+    Individual findBestIndividual(const std::vector<Individual>& population);
+
     bool executeProcess(const Process* process);
     void generateOutput();
     Individual mutate(const Individual& individual, double mutationRate);
@@ -32,6 +34,7 @@ private:
 
     static const int POPULATION_SIZE;
     std::vector<Individual> population_;
+    Individual bestSolution_;
     std::vector<Individual> selection();
 
     double calculateFitness(Individual &individual);
