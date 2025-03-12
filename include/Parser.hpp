@@ -1,15 +1,15 @@
 #pragma once
-#include <string>
-#include <vector>
-#include <unordered_map>
 #include "Config.hpp"
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 class Parser {
-public:
+  public:
     explicit Parser(const std::string &filename);
     bool parse(Config &config);
 
-private:
+  private:
     std::string filename_;
     bool optimizeFound_;
 
