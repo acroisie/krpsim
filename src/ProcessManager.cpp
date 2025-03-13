@@ -9,7 +9,8 @@
 
 using namespace std;
 
-const int ProcessManager::POPULATION_SIZE = 20;
+const int ProcessManager::POPULATION_SIZE = 200;
+static const int MAX_SEQUENCE_LEN = 200;
 
 ProcessManager::ProcessManager(const Config &config, int delayLimit)
     : config_(config), delayLimit_(delayLimit), currentCycle_(0) {
@@ -27,7 +28,7 @@ void ProcessManager::initializePopulation() {
 
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution<> lengthDist(1, delayLimit_);
+    uniform_int_distribution<> lengthDist(1, MAX_SEQUENCE_LEN);
     uniform_int_distribution<> procDist(0, (int)allProcessNames.size() - 1);
 
     for (int i = 0; i < POPULATION_SIZE; ++i) {
@@ -299,7 +300,7 @@ Individual ProcessManager::mutate(const Individual &individual, double mutationR
 
 void ProcessManager::runGeneticAlgorithm() {
     initializePopulation();
-    const int NUM_GENERATIONS = 20;
+    const int NUM_GENERATIONS = 10;
     const double MUTATION_RATE = 0.1;
 
     evaluateFitness();
@@ -335,7 +336,12 @@ void ProcessManager::runGeneticAlgorithm() {
         if (!newPopulation.empty()) {
             population_ = newPopulation;
         }
+        
         evaluateFitness();
+        auto bestInPop = findBestIndividual(population_);
+        cerr << "GEN=" << generation 
+            << " bestFitness=" << bestInPop.fitness << endl;
+
     }
 
     if (!population_.empty()) {
