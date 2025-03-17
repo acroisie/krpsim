@@ -1,313 +1,275 @@
 #include "Optimizer.hpp"
+#include "Stock.hpp"
+#include "Process.hpp"
+#include "Simulator.hpp"
 #include <algorithm>
-#include <random>
-#include <cmath>
 #include <iostream>
-#include <limits>
-#include <unordered_set>
+#include <random>
+#include <set>
 
-Optimizer::Optimizer(const Config& config, int timeLimit)
-    : config_(config), timeLimit_(timeLimit), simulator_(config) {
+Optimizer::Optimizer(
+    const std::unordered_map<std::string, std::shared_ptr<Stock>>& stocks,
+    const std::vector<std::shared_ptr<Process>>& processes,
+    const Parser::OptimizationTarget& optimizationTarget)
+    : stocks_(stocks), processes_(processes), optimizationTarget_(optimizationTarget) {
+    
+    simulator_ = std::make_unique<Simulator>(stocks, processes);
 }
 
-Optimizer::Solution Optimizer::optimize() {
-    std::vector<Solution> candidates;
+Solution Optimizer::findOptimalSolution(int timeLimit) {
+    auto startTime = std::chrono::steady_clock::now();
+    auto endTime = startTime + std::chrono::seconds(timeLimit);
     
-    // 1. Essai de diverses stratégies
-    candidates.push_back(greedyOptimize());
-    candidates.push_back(randomSearch(100));
+    std::cout << "Finding optimal solution (time limit: " << timeLimit << " seconds)..." << std::endl;
     
-    // Choix d'une stratégie initiale pour démarrer la recherche locale
-    std::sort(candidates.begin(), candidates.end(), compareSolutions);
+    // Generate an initial greedy solution
+    Solution bestSolution = generateGreedySolution();
+    double bestScore = evaluateSolution(bestSolution);
     
-    Solution bestSolution = candidates.front();
-    std::cout << "Initial best score: " << bestSolution.score << std::endl;
+    std::cout << "Initial solution score: " << bestScore << std::endl;
     
-    // 2. Améliorations par recherche locale
-    bestSolution = simulatedAnnealing(bestSolution, 1000);
-    std::cout << "After simulated annealing: " << bestSolution.score << std::endl;
+    // Improve the solution using local search
+    Solution improvedSolution = improveWithLocalSearch(bestSolution, endTime);
+    double improvedScore = evaluateSolution(improvedSolution);
     
-    bestSolution = hillClimbing(bestSolution, 500);
-    std::cout << "After hill climbing: " << bestSolution.score << std::endl;
+    if (improvedScore > bestScore) {
+        bestSolution = improvedSolution;
+        bestScore = improvedScore;
+        std::cout << "Improved solution score: " << bestScore << std::endl;
+    }
+    
+    auto elapsed = std::chrono::steady_clock::now() - startTime;
+    std::cout << "Optimization completed in " 
+              << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() / 1000.0
+              << " seconds" << std::endl;
     
     return bestSolution;
 }
 
-void Optimizer::printResults(const Solution& solution) {
-    Simulator::Result result = simulator_.simulate(solution.processSequence, timeLimit_);
-    
-    std::cout << "Nice file! " << config_.getProcesses().size() << " processes, "
-              << config_.getStocks().size() << " stocks, "
-              << config_.getOptimizeGoal().size() << " to optimize" << std::endl;
-    
-    std::cout << "Main walk:" << std::endl;
-    for (const auto& log : result.executionLog) {
-        std::cout << log.first << ":" << log.second << std::endl;
+double Optimizer::evaluateSolution(const Solution& solution) const {
+    // Validate the solution
+    if (!simulator_->validate(solution)) {
+        return -1000000.0;  // Invalid solution gets a very bad score
     }
     
-    std::cout << "no more process doable at time " << result.finalTime << std::endl;
-    std::cout << "Stock :" << std::endl;
-    for (const auto& stock : result.finalStocks) {
-        std::cout << stock.first << " => " << stock.second << std::endl;
+    double score = 0.0;
+    
+    // Get final stocks
+    auto finalStocks = solution.getFinalStocks(stocks_, processes_);
+    
+    if (optimizationTarget_.optimizeTime) {
+        // Lower duration is better
+        score -= solution.getTotalDuration();
     }
+    
+    // Maximize target stocks
+    for (const auto& stockName : optimizationTarget_.optimizeStocks) {
+        auto it = finalStocks.find(stockName);
+        if (it != finalStocks.end()) {
+            score += it->second;
+        }
+    }
+    
+    return score;
 }
 
-Optimizer::Solution Optimizer::greedyOptimize() {
-    // Stratégie 1: Priorité basée sur l'efficacité des ressources
+Solution Optimizer::generateGreedySolution() const {
     Solution solution;
-    solution.processSequence = prioritizeByResourceEfficiency();
-    solution.score = evaluate(solution);
     
-    // Stratégie 2: Analyse des dépendances
-    Solution depSolution;
-    depSolution.processSequence = analyzeProcessDependencies();
-    depSolution.score = evaluate(depSolution);
+    // Copy initial stocks
+    std::unordered_map<std::string, int> currentStocks;
+    for (const auto& [name, stock] : stocks_) {
+        currentStocks[name] = stock->getQuantity();
+    }
     
-    return (solution.score > depSolution.score) ? solution : depSolution;
-}
-
-std::vector<std::string> Optimizer::analyzeProcessDependencies() {
-    // Graphe de dépendances entre processus
-    std::map<std::string, std::vector<std::string>> dependsOn;
-    std::map<std::string, std::vector<std::string>> produces;
-    std::map<std::string, int> producedBy;
+    // Keep track of the current cycle
+    int currentCycle = 0;
     
-    // Identifier les ressources produites par chaque processus
-    for (const auto& process : config_.getProcesses()) {
-        for (const auto& output : process.outputs) {
-            produces[process.name].push_back(output.first);
-            producedBy[output.first]++;
+    // Map process name to its end cycle
+    std::unordered_map<std::string, int> processEndCycles;
+    
+    // Set of processes that can be executed at the current cycle
+    std::set<std::string> executableProcesses;
+    
+    // Create temporary stocks for checking
+    std::unordered_map<std::string, std::shared_ptr<Stock>> tempStocks;
+    for (const auto& [name, quantity] : currentStocks) {
+        tempStocks[name] = std::make_shared<Stock>(name, quantity);
+    }
+    
+    // Create a process map for quick lookup
+    std::unordered_map<std::string, std::shared_ptr<Process>> processMap;
+    for (const auto& process : processes_) {
+        processMap[process->getName()] = process;
+    }
+    
+    // Find initially executable processes
+    for (const auto& process : processes_) {
+        if (process->canExecute(tempStocks)) {
+            executableProcesses.insert(process->getName());
         }
     }
     
-    // Identifier les dépendances entre processus
-    for (const auto& process : config_.getProcesses()) {
-        for (const auto& input : process.inputs) {
-            // Si l'input est produit par un autre processus
-            if (producedBy.find(input.first) != producedBy.end()) {
-                for (const auto& otherProcess : config_.getProcesses()) {
-                    if (otherProcess.name == process.name) continue;
-                    
-                    for (const auto& output : otherProcess.outputs) {
-                        if (output.first == input.first) {
-                            dependsOn[process.name].push_back(otherProcess.name);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Maximum number of iterations to prevent infinite loops
+    const int MAX_ITERATIONS = 10000;
+    int iterations = 0;
     
-    // Classer les processus en fonction des dépendances
-    std::vector<std::string> result;
-    std::unordered_set<std::string> visited;
-    
-    // Ajouter d'abord les processus sans dépendances
-    for (const auto& process : config_.getProcesses()) {
-        if (dependsOn.find(process.name) == dependsOn.end() || dependsOn[process.name].empty()) {
-            result.push_back(process.name);
-            visited.insert(process.name);
-        }
-    }
-    
-    // Puis les autres en respectant les dépendances
-    while (visited.size() < config_.getProcesses().size()) {
-        for (const auto& process : config_.getProcesses()) {
-            if (visited.find(process.name) != visited.end()) continue;
-            
-            bool allDependenciesSatisfied = true;
-            if (dependsOn.find(process.name) != dependsOn.end()) {
-                for (const auto& dep : dependsOn[process.name]) {
-                    if (visited.find(dep) == visited.end()) {
-                        allDependenciesSatisfied = false;
-                        break;
-                    }
-                }
-            }
-            
-            if (allDependenciesSatisfied) {
-                result.push_back(process.name);
-                visited.insert(process.name);
-            }
-        }
+    while (!executableProcesses.empty() && iterations < MAX_ITERATIONS) {
+        iterations++;
         
-        // Si aucun processus n'a été ajouté, briser un cycle
-        if (visited.size() < config_.getProcesses().size() && 
-            visited.size() == result.size()) {
-            for (const auto& process : config_.getProcesses()) {
-                if (visited.find(process.name) == visited.end()) {
-                    result.push_back(process.name);
-                    visited.insert(process.name);
+        // Choose a process to execute
+        std::string processToExecute = *executableProcesses.begin();
+        
+        // For optimization, prioritize processes that produce target stocks
+        for (const auto& processName : executableProcesses) {
+            const auto& process = processMap[processName];
+            
+            // Check if this process produces any target stocks
+            bool producesTargetStock = false;
+            for (const auto& targetStock : optimizationTarget_.optimizeStocks) {
+                if (process->getResults().find(targetStock) != process->getResults().end()) {
+                    producesTargetStock = true;
                     break;
                 }
             }
-        }
-    }
-    
-    return result;
-}
-
-std::vector<std::string> Optimizer::prioritizeByResourceEfficiency() {
-    std::vector<std::pair<std::string, double>> processEfficiency;
-    
-    // Déterminer les objectifs d'optimisation
-    const auto& goals = config_.getOptimizeGoal();
-    bool optimizeTime = goals.empty() || (goals.size() == 1 && goals[0] == "time");
-    
-    for (const auto& process : config_.getProcesses()) {
-        double efficiency = 0.0;
-        
-        // Valeur des outputs
-        double outputValue = 0.0;
-        for (const auto& output : process.outputs) {
-            if (!optimizeTime && std::find(goals.begin(), goals.end(), output.first) != goals.end()) {
-                // Si c'est une ressource à optimiser, elle a une valeur plus élevée
-                outputValue += output.second * 10.0;
-            } else {
-                outputValue += output.second;
+            
+            if (producesTargetStock) {
+                processToExecute = processName;
+                break;
             }
         }
         
-        // Coût des inputs
-        double inputCost = 0.0;
-        for (const auto& input : process.inputs) {
-            inputCost += input.second;
+        // Execute the process
+        const auto& process = processMap[processToExecute];
+        
+        // Consume requirements
+        for (const auto& [stockName, quantity] : process->getRequirements()) {
+            currentStocks[stockName] -= quantity;
         }
         
-        // Temps d'exécution
-        double timeWeight = optimizeTime ? 5.0 : 1.0;
+        // Add to solution
+        int duration = process->getCycleDuration();
+        solution.addExecution(processToExecute, currentCycle, duration);
         
-        // Efficacité = (valeur des outputs) / (coût des inputs * temps)
-        if (inputCost > 0 && process.nbCycle > 0) {
-            efficiency = outputValue / (inputCost * process.nbCycle / timeWeight);
-        } else if (process.nbCycle > 0) {
-            efficiency = outputValue / (process.nbCycle / timeWeight);
-        } else {
-            efficiency = outputValue * 1000; // Très efficace si temps = 0
+        // Update end cycle
+        processEndCycles[processToExecute] = currentCycle + duration;
+        
+        // Update stocks when the process completes
+        for (const auto& [stockName, quantity] : process->getResults()) {
+            // The stock will be available after the process completes
+            int endCycle = processEndCycles[processToExecute];
+            
+            // We'll add the result when we reach that cycle
+            if (currentCycle == endCycle) {
+                currentStocks[stockName] += quantity;
+            }
         }
         
-        processEfficiency.push_back({process.name, efficiency});
+        // Remove executed process from the set
+        executableProcesses.erase(processToExecute);
+        
+        // Update executable processes
+        tempStocks.clear();
+        for (const auto& [name, quantity] : currentStocks) {
+            tempStocks[name] = std::make_shared<Stock>(name, quantity);
+        }
+        
+        for (const auto& process : processes_) {
+            if (process->canExecute(tempStocks) && 
+                executableProcesses.find(process->getName()) == executableProcesses.end()) {
+                executableProcesses.insert(process->getName());
+            }
+        }
+        
+        // If no executable processes, advance to the next process completion
+        if (executableProcesses.empty() && !processEndCycles.empty()) {
+            int nextCycle = std::numeric_limits<int>::max();
+            for (const auto& [process, endCycle] : processEndCycles) {
+                if (endCycle > currentCycle && endCycle < nextCycle) {
+                    nextCycle = endCycle;
+                }
+            }
+            
+            if (nextCycle != std::numeric_limits<int>::max()) {
+                currentCycle = nextCycle;
+                
+                // Update stocks for completed processes
+                for (auto it = processEndCycles.begin(); it != processEndCycles.end(); ) {
+                    if (it->second == currentCycle) {
+                        // Process completed, add results
+                        const auto& process = processMap[it->first];
+                        for (const auto& [stockName, quantity] : process->getResults()) {
+                            currentStocks[stockName] += quantity;
+                        }
+                        
+                        // Remove from end cycles
+                        it = processEndCycles.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+                
+                // Update executable processes
+                tempStocks.clear();
+                for (const auto& [name, quantity] : currentStocks) {
+                    tempStocks[name] = std::make_shared<Stock>(name, quantity);
+                }
+                
+                for (const auto& process : processes_) {
+                    if (process->canExecute(tempStocks)) {
+                        executableProcesses.insert(process->getName());
+                    }
+                }
+            }
+        }
     }
     
-    // Trier par efficacité décroissante
-    std::sort(processEfficiency.begin(), processEfficiency.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
-    
-    // Extraire uniquement les noms de processus
-    std::vector<std::string> result;
-    for (const auto& p : processEfficiency) {
-        result.push_back(p.first);
-    }
-    
-    return result;
-}
-
-double Optimizer::evaluate(const Solution& solution) {
-    Simulator::Result result = simulator_.simulate(solution.processSequence, timeLimit_, false);
-    return result.score;
-}
-
-Optimizer::Solution Optimizer::randomSolution() {
-    Solution solution;
-    
-    // Créer une permutation aléatoire des processus
-    for (const auto& process : config_.getProcesses()) {
-        solution.processSequence.push_back(process.name);
-    }
-    
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(solution.processSequence.begin(), solution.processSequence.end(), g);
-    
-    solution.score = evaluate(solution);
     return solution;
 }
 
-Optimizer::Solution Optimizer::randomSearch(int numTrials) {
-    Solution bestSolution;
-    bestSolution.score = std::numeric_limits<double>::lowest();
+Solution Optimizer::improveWithLocalSearch(Solution solution, const std::chrono::steady_clock::time_point& endTime) const {
+    // This is a simple local search implementation that could be expanded
     
-    for (int i = 0; i < numTrials; ++i) {
-        Solution candidate = randomSolution();
-        if (candidate.score > bestSolution.score) {
-            bestSolution = candidate;
+    Solution bestSolution = solution;
+    double bestScore = evaluateSolution(bestSolution);
+    
+    // Random number generator
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    
+    while (std::chrono::steady_clock::now() < endTime) {
+        // Make a small modification to the current solution
+        Solution newSolution = bestSolution;
+        
+        // Get the executions
+        auto executions = newSolution.getExecutions();
+        
+        if (executions.empty()) {
+            break;
+        }
+        
+        // Choose a random execution to modify
+        std::uniform_int_distribution<> execDist(0, executions.size() - 1);
+        // int execIndex = execDist(gen);  // Uncomment when implementing modification logic
+        
+        // Currently we just move the execution earlier or later in time
+        std::uniform_int_distribution<> timeDist(-10, 10);
+        // int timeShift = timeDist(gen);  // Uncomment when implementing modification logic
+        
+        // TODO: Implement logic to modify solution based on execIndex and timeShift
+        
+        // Modify the solution (this is a simplified approach)
+        // For a real implementation, we would need to rebuild the solution properly
+        
+        // Evaluate the new solution
+        double newScore = evaluateSolution(newSolution);
+        
+        // If the new solution is better, keep it
+        if (newScore > bestScore) {
+            bestSolution = newSolution;
+            bestScore = newScore;
         }
     }
     
     return bestSolution;
-}
-
-Optimizer::Solution Optimizer::neighborSolution(const Solution& solution) {
-    Solution neighbor = solution;
-    
-    // Générer une solution voisine en permutant deux processus aléatoires
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dist(0, solution.processSequence.size() - 1);
-    
-    int i = dist(gen);
-    int j = dist(gen);
-    while (i == j && solution.processSequence.size() > 1) {
-        j = dist(gen);
-    }
-    
-    std::swap(neighbor.processSequence[i], neighbor.processSequence[j]);
-    
-    neighbor.score = evaluate(neighbor);
-    return neighbor;
-}
-
-bool Optimizer::compareSolutions(const Solution& a, const Solution& b) {
-    return a.score > b.score;
-}
-
-Optimizer::Solution Optimizer::hillClimbing(const Solution& initialSolution, int iterations) {
-    Solution current = initialSolution;
-    
-    for (int i = 0; i < iterations; ++i) {
-        Solution neighbor = neighborSolution(current);
-        
-        if (neighbor.score > current.score) {
-            current = neighbor;
-        }
-    }
-    
-    return current;
-}
-
-Optimizer::Solution Optimizer::simulatedAnnealing(const Solution& initialSolution, int iterations) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dist(0.0, 1.0);
-    
-    Solution current = initialSolution;
-    Solution best = current;
-    
-    // Paramètres de température
-    double temperature = 1.0;
-    double coolingRate = 0.99;
-    
-    for (int i = 0; i < iterations; ++i) {
-        Solution neighbor = neighborSolution(current);
-        
-        // Décider si on accepte la nouvelle solution
-        if (neighbor.score > current.score) {
-            current = neighbor;
-            
-            if (current.score > best.score) {
-                best = current;
-            }
-        } else {
-            // Accepter des solutions moins bonnes avec une probabilité qui diminue avec la température
-            double acceptanceProbability = exp((neighbor.score - current.score) / temperature);
-            if (dist(gen) < acceptanceProbability) {
-                current = neighbor;
-            }
-        }
-        
-        // Refroidissement
-        temperature *= coolingRate;
-    }
-    
-    return best;
 }

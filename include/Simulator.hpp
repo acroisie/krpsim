@@ -1,52 +1,60 @@
 #pragma once
 
-#include "Config.hpp"
-#include <map>
+#include <unordered_map>
 #include <vector>
-#include <string>
-#include <queue>
 #include <memory>
-#include <functional>
+#include <string>
+#include "Solution.hpp"
 
+class Stock;
+class Process;
+
+/**
+ * @class Simulator
+ * @brief Simulates the execution of processes
+ */
 class Simulator {
 public:
-    struct Event {
-        int time;
-        std::string processName;
-        bool isStart;  // true = start, false = finish
-
-        bool operator>(const Event& other) const {
-            return time > other.time;
-        }
+    /**
+     * @struct StockState
+     * @brief Represents the state of stocks at a specific cycle
+     */
+    struct StockState {
+        std::unordered_map<std::string, int> quantities;
     };
-
-    struct Result {
-        std::vector<std::pair<int, std::string>> executionLog;
-        std::map<std::string, int> finalStocks;
-        int finalTime;
-        double score;
-    };
-
-    Simulator(const Config& config);
-
-    // Simule l'exécution avec une priorité donnée pour chaque processus
-    Result simulate(const std::vector<std::string>& processSequence, 
-                    int timeLimit, 
-                    bool generateLog = true);
-
-    // Calcule un score en fonction des objectifs d'optimisation
-    double calculateScore(const std::map<std::string, int>& stocks, int time) const;
-
+    
+    /**
+     * @brief Constructor
+     * @param stocks The initial stocks
+     * @param processes The available processes
+     */
+    Simulator(
+        const std::unordered_map<std::string, std::shared_ptr<Stock>>& stocks,
+        const std::vector<std::shared_ptr<Process>>& processes);
+    
+    /**
+     * @brief Simulate a solution
+     * @param solution The solution to simulate
+     * @return Map of cycle to stock state
+     */
+    std::unordered_map<int, StockState> simulate(const Solution& solution) const;
+    
+    /**
+     * @brief Simulate and validate a solution
+     * @param solution The solution to validate
+     * @return True if the solution is valid
+     */
+    bool validate(const Solution& solution) const;
+    
+    /**
+     * @brief Find processes that can be executed at a given cycle
+     * @param stockState The current stock state
+     * @return Vector of executable process names
+     */
+    std::vector<std::string> findExecutableProcesses(const StockState& stockState) const;
+    
 private:
-    const Config& config_;
-    std::priority_queue<Event, std::vector<Event>, std::greater<Event>> eventQueue_;
-    std::map<std::string, int> stocks_;
-    std::vector<std::pair<int, std::string>> executionLog_;
-    int currentTime_;
-
-    bool canRunProcess(const Process& process) const;
-    void startProcess(const Process& process, int startTime);
-    void consumeResources(const Process& process);
-    void produceResources(const Process& process);
-    const Process* getProcessByName(const std::string& name) const;
+    std::unordered_map<std::string, std::shared_ptr<Stock>> initialStocks_;
+    std::vector<std::shared_ptr<Process>> processes_;
+    std::unordered_map<std::string, std::shared_ptr<Process>> processMap_;
 };
