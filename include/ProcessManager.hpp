@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 class ProcessManager {
   public:
@@ -30,6 +31,19 @@ class ProcessManager {
     Individual mutate(const Individual &individual, double mutationRate);
 
     Individual findBestIndividual(const std::vector<Individual> &population);
+    
+    // Tests if a sequence is executable and returns final stocks
+    bool simulateSequence(const std::vector<std::string>& sequence, 
+                         std::map<std::string, int>& finalStocks,
+                         int& executedCount);
+    
+    // Creates a sequence based on resource dependencies
+    void createResourceDependencySequence(std::vector<std::string>& sequence, 
+                                         const std::vector<std::string>& allProcessNames);
+    
+    // Create a diversity recovery population when stagnation is detected
+    void createDiversityRecoveryPopulation(std::vector<Individual>& newPopulation, 
+                                          const std::vector<std::string>& allProcessNames);
 
     void generateOutput();
 
