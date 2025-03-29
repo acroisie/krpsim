@@ -23,6 +23,6 @@ int main(int argc, char *argv[]) {
     }
 
     ProcessManager manager(config, delay);
-    manager.runGeneticAlgorithm();
+    manager.run();
     return 0;
 }
