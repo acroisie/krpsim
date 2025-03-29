@@ -3,7 +3,7 @@ CXX = g++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude -g
 
 SRC := $(shell find src -type f -name "*.cpp" ! -name "*tests*")
-SRC := $(shell find src -type f -name "*.cpp" ! -name "*tests*")
+
 OBJS := $(SRC:.cpp=.o)
 
 all: $(NAME)
