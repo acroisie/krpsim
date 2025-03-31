@@ -9,6 +9,9 @@
 
 using namespace std;
 
+const size_t MAX_SEQUENCE_LENGTH = 500;
+
+
 GeneticAlgorithm::GeneticAlgorithm(const Config& config, Simulator& simulator, int populationSize)
     : config_(config), simulator_(simulator), populationSize_(populationSize) {
     

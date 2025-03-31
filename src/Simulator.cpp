@@ -8,8 +8,7 @@ using namespace std;
 
 Simulator::Simulator(const Config &config, int delayLimit) : config_(config), delayLimit_(delayLimit) {}
 
-bool Simulator::simulateSequence(const std::vector<std::string> &sequence, std::map<std::string, int> &finalStocks,
-                                 int &executedCount) {
+bool Simulator::simulateSequence(const vector<string> &sequence, map<string, int> &finalStocks, int &executedCount) {
     // Reset state
     map<string, int> stocks;
     for (const auto &stock : config_.getStocks()) {
@@ -115,8 +114,7 @@ bool Simulator::simulateSequence(const std::vector<std::string> &sequence, std::
 }
 
 // Calculer le fitness de manière générique sans hardcoder pour des problèmes spécifiques
-double Simulator::calculateFitness(const std::vector<std::string> &processSequence,
-                                   std::vector<std::pair<int, std::string>> &executionLogs) {
+double Simulator::calculateFitness(const vector<string> &processSequence, vector<pair<int, string>> &executionLogs) {
     // Reset state for simulation
     map<string, int> stocks;
     for (const auto &stock : config_.getStocks()) {
@@ -253,7 +251,7 @@ double Simulator::calculateFitness(const std::vector<std::string> &processSequen
 
     return fitness;
 }
-vector<const Process *> Simulator::getRunnableProcesses(const std::map<std::string, int> &stocks) {
+vector<const Process *> Simulator::getRunnableProcesses(const map<string, int> &stocks) {
     vector<const Process *> result;
     for (const auto &proc : config_.getProcesses()) {
         bool canRun = true;
@@ -270,7 +268,7 @@ vector<const Process *> Simulator::getRunnableProcesses(const std::map<std::stri
     return result;
 }
 
-bool Simulator::executeProcess(const Process *process, std::map<std::string, int> &stocks) {
+bool Simulator::executeProcess(const Process *process, map<string, int> &stocks) {
     if (!process) return false;
 
     // Verify we have enough resources
