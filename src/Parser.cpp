@@ -5,44 +5,45 @@
 #include <stdexcept>
 #include <unordered_map>
 
-Parser::Parser(const std::string &filename) : filename_(filename), optimizeFound_(false) {}
+using namespace std;
+
+Parser::Parser(const string &filename) : filename_(filename), optimizeFound_(false) {}
 
 bool Parser::parse(Config &config) {
-    std::ifstream file(filename_);
+    ifstream file(filename_);
     if (!file) {
-        std::cerr << "Error: could not open file " << filename_ << std::endl;
+        cerr << "Error: could not open file " << filename_ << endl;
         return false;
     }
-    std::string line;
+    string line;
     int lineNumber = 0;
 
     try {
-        while (std::getline(file, line)) {
+        while (getline(file, line)) {
             ++lineNumber;
-            // Ignore lignes vides ou commentaires
             size_t pos = line.find_first_not_of(" \t");
-            if (pos == std::string::npos || line[pos] == '#') {
+            if (pos == string::npos || line[pos] == '#') {
                 continue;
             }
             parseLine(line, config);
         }
         if (config.getProcesses().empty()) {
-            throw std::runtime_error("No process defined in file.");
+            throw runtime_error("No process defined in file.");
         }
-    } catch (const std::exception &e) {
-        std::cerr << "Error at line " << lineNumber << ": " << e.what() << std::endl;
+    } catch (const exception &e) {
+        cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
         return false;
     }
     return true;
 }
 
-void Parser::parseLine(const std::string &line, Config &config) {
+void Parser::parseLine(const string &line, Config &config) {
     Lexer lex(line);
-    std::string firstToken = lex.nextIdentifier();
+    string firstToken = lex.nextIdentifier();
 
     if (firstToken == "optimize") {
         if (optimizeFound_) {
-            throw std::runtime_error("Multiple optimize lines found.");
+            throw runtime_error("Multiple optimize lines found.");
         }
         optimizeFound_ = true;
         lex.expect(':');
@@ -55,7 +56,6 @@ void Parser::parseLine(const std::string &line, Config &config) {
 
     lex.expect(':');
     if (lex.peek() == '(') {
-        // C’est un process
         Process proc;
         proc.name = firstToken;
 
@@ -72,7 +72,6 @@ void Parser::parseLine(const std::string &line, Config &config) {
         proc.nbCycle = lex.nextInteger();
         config.addProcess(proc);
     } else {
-        // C’est un stock
         Stock stock;
         stock.name = firstToken;
         stock.quantity = lex.nextInteger();
@@ -80,10 +79,10 @@ void Parser::parseLine(const std::string &line, Config &config) {
     }
 }
 
-std::unordered_map<std::string, int> Parser::parseResourceList(Lexer &lex) {
-    std::unordered_map<std::string, int> resources;
+unordered_map<string, int> Parser::parseResourceList(Lexer &lex) {
+    unordered_map<string, int> resources;
     while (true) {
-        std::string name = lex.nextIdentifier();
+        string name = lex.nextIdentifier();
         lex.expect(':');
         int quantity = lex.nextInteger();
         resources[name] = quantity;
@@ -94,8 +93,8 @@ std::unordered_map<std::string, int> Parser::parseResourceList(Lexer &lex) {
     return resources;
 }
 
-std::vector<std::string> Parser::parseOptimizeList(Lexer &lex) {
-    std::vector<std::string> optimizeList;
+vector<string> Parser::parseOptimizeList(Lexer &lex) {
+    vector<string> optimizeList;
     while (true) {
         optimizeList.push_back(lex.nextIdentifier());
         if (!lex.match(';')) {
