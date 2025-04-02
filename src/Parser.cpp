@@ -81,6 +81,13 @@ void Parser::parseLine(const string &line, Config &config) {
 
 unordered_map<string, int> Parser::parseResourceList(Lexer &lex) {
     unordered_map<string, int> resources;
+
+    // Nouveau: on vérifie si la parenthèse est vide directement
+    if (lex.peek() == ')') {
+        // Champ vide, on retourne simplement la map vide
+        return resources;
+    }
+
     while (true) {
         string name = lex.nextIdentifier();
         lex.expect(':');
