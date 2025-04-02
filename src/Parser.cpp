@@ -3,18 +3,19 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <unordered_map>
 
 using namespace std;
 
-Parser::Parser(const string &filename) : filename_(filename), optimizeFound_(false) {}
+Parser::Parser(const string &filename)
+    : filename(filename), optimizeFound(false) {}
 
 bool Parser::parse(Config &config) {
-    ifstream file(filename_);
+    ifstream file(filename);
     if (!file) {
-        cerr << "Error: could not open file " << filename_ << endl;
+        cerr << "Error: could not open file " << filename << endl;
         return false;
     }
+
     string line;
     int lineNumber = 0;
 
@@ -27,6 +28,7 @@ bool Parser::parse(Config &config) {
             }
             parseLine(line, config);
         }
+
         if (config.getProcesses().empty()) {
             throw runtime_error("No process defined in file.");
         }
@@ -34,6 +36,7 @@ bool Parser::parse(Config &config) {
         cerr << "Error at line " << lineNumber << ": " << e.what() << endl;
         return false;
     }
+
     return true;
 }
 
@@ -42,10 +45,10 @@ void Parser::parseLine(const string &line, Config &config) {
     string firstToken = lex.nextIdentifier();
 
     if (firstToken == "optimize") {
-        if (optimizeFound_) {
+        if (optimizeFound) {
             throw runtime_error("Multiple optimize lines found.");
         }
-        optimizeFound_ = true;
+        optimizeFound = true;
         lex.expect(':');
         lex.expect('(');
         auto optList = parseOptimizeList(lex);
@@ -82,9 +85,7 @@ void Parser::parseLine(const string &line, Config &config) {
 unordered_map<string, int> Parser::parseResourceList(Lexer &lex) {
     unordered_map<string, int> resources;
 
-    // Nouveau: on vérifie si la parenthèse est vide directement
     if (lex.peek() == ')') {
-        // Champ vide, on retourne simplement la map vide
         return resources;
     }
 
@@ -97,16 +98,19 @@ unordered_map<string, int> Parser::parseResourceList(Lexer &lex) {
             break;
         }
     }
+
     return resources;
 }
 
 vector<string> Parser::parseOptimizeList(Lexer &lex) {
     vector<string> optimizeList;
+
     while (true) {
         optimizeList.push_back(lex.nextIdentifier());
         if (!lex.match(';')) {
             break;
         }
     }
+
     return optimizeList;
 }

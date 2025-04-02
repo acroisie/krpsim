@@ -1,214 +1,242 @@
 #include "Simulator.hpp"
-#include <iostream>
-#include <limits>
-#include <queue>
-#include <map>
-#include <vector>
-#include <string>
-#include <set>
-#include <algorithm> // Pour std::min, std::max
-#include <cmath>     // Pour std::isfinite
-#include <stdexcept> // Pour std::runtime_error
+#include <algorithm>
 
-// Constructeur (inchangé)
-Simulator::Simulator(const Config& config, int timeLimit)
-    : systemConfig_(config), simulationTimeLimit_(timeLimit)
-{
-    processLookupMap_.clear();
-    for (const auto& proc : systemConfig_.getProcesses()) {
-        if (processLookupMap_.count(proc.name)) {
-             throw std::runtime_error("Simulator Error: Duplicate process name found in config: " + proc.name);
-        }
-        processLookupMap_[proc.name] = &proc;
+using namespace std;
+
+Simulator::Simulator(const Config &config, int timeLimit)
+    : config(config), timeLimit(timeLimit) {
+
+    for (const auto &process : config.getProcesses()) {
+        processMap[process.name] = &process;
     }
-     if (systemConfig_.getProcesses().empty()) {
-          std::cerr << "DEBUG: Warning: Simulator initialized with no processes defined." << std::endl;
-     }
 }
 
-// Helper : Trouve un processus par son nom (inchangé)
-const Process* Simulator::findProcessByName(const std::string& name) const {
-    auto it = processLookupMap_.find(name);
-    if (it != processLookupMap_.end()) { return it->second; }
+const Process *Simulator::getProcessByName(const std::string &name) const {
+    auto it = processMap.find(name);
+    if (it != processMap.end()) {
+        return it->second;
+    }
     return nullptr;
 }
 
-// Helper : Vérifie si un processus peut démarrer (inchangé)
-bool Simulator::canProcessStart(const Process* process, const std::map<std::string, int>& currentStocks) const {
-    if (!process) { return false; }
-    for (const auto& input : process->inputs) {
-        auto it = currentStocks.find(input.first);
-        if (it == currentStocks.end() || it->second < input.second) { return false; }
+bool Simulator::canStartProcess(const Process *process,
+                                const map<string, int> &stocks) const {
+    if (!process) {
+        return false;
     }
+
+    for (const auto &[resource, quantity] : process->inputs) {
+        auto stockIt = stocks.find(resource);
+        if (stockIt == stocks.end() || stockIt->second < quantity) {
+            return false;
+        }
+    }
+
     return true;
 }
 
-// Fonction CLÉ : Calcule le fitness et génère les logs d'exécution
-Simulator::SimulationResult Simulator::calculateFitnessAndLogs(
-    const std::vector<std::string>& sequenceToAttempt) {
-
-    // std::cerr << "\nDEBUG: Starting Simulation..." << std::endl; // DEBUG
-
+Simulator::SimulationResult
+Simulator::runSimulation(const vector<string> &processSequence) {
     SimulationResult result;
-    result.finalStocks.clear();
-    for (const auto& stock : systemConfig_.getStocks()) {
+
+    // Initialize stocks from config
+    for (const auto &stock : config.getStocks()) {
         result.finalStocks[stock.name] = stock.quantity;
     }
-    result.logs.clear();
+
     int currentTime = 0;
-    int executedProcessCount = 0;
+    int processesExecuted = 0;
     size_t sequenceIndex = 0;
 
-    std::priority_queue<RunningProcessInfo, std::vector<RunningProcessInfo>, std::greater<RunningProcessInfo>> runningProcessesQueue;
+    // Priority queue for running processes, ordered by completion time
+    priority_queue<RunningProcess, vector<RunningProcess>,
+                   greater<RunningProcess>>
+        runningProcesses;
     bool opportunisticMode = false;
 
-    // --- Boucle de Simulation (Logique v11 - sequenceIndex avance seulement si succès ET depuis séquence) ---
-    while (currentTime <= simulationTimeLimit_) {
-        // std::cerr << "DEBUG: Loop Start. currentTime = " << currentTime << std::endl; // DEBUG
-        bool resourcesUpdated = false;
-        while (!runningProcessesQueue.empty() && runningProcessesQueue.top().completionTime <= currentTime) {
-            RunningProcessInfo finishedProcess = runningProcessesQueue.top();
-            runningProcessesQueue.pop();
-            if (finishedProcess.completionTime <= simulationTimeLimit_ && finishedProcess.processDetails) {
-                 // std::cerr << "DEBUG: t=" << currentTime << ": Finishing process '" << finishedProcess.processDetails->name << "'" << std::endl; // DEBUG
-                 for (const auto& output : finishedProcess.processDetails->outputs) {
-                    result.finalStocks[output.first] += output.second;
-                 }
-                 resourcesUpdated = true;
+    // Main simulation loop
+    while (currentTime <= timeLimit) {
+        bool stocksUpdated = false;
+
+        // Complete processes that have finished
+        while (!runningProcesses.empty() &&
+               runningProcesses.top().completionTime <= currentTime) {
+            RunningProcess finishedProcess = runningProcesses.top();
+            runningProcesses.pop();
+
+            if (finishedProcess.completionTime <= timeLimit &&
+                finishedProcess.processPtr) {
+                for (const auto &[resource, quantity] :
+                     finishedProcess.processPtr->outputs) {
+                    result.finalStocks[resource] += quantity;
+                }
+                stocksUpdated = true;
             }
         }
-        if (currentTime >= simulationTimeLimit_) { result.reachedTimeLimit = true; break; }
 
-        bool processStartedThisCycle = false;
-        if (currentTime < simulationTimeLimit_) {
-            bool tryStartingMore = true;
-            while (tryStartingMore) {
-                tryStartingMore = false;
-                const Process* processToTry = nullptr;
-                std::string processNameToLog;
+        if (currentTime >= timeLimit) {
+            result.timeoutReached = true;
+            break;
+        }
+
+        bool processStarted = false;
+        if (currentTime < timeLimit) {
+            bool tryMore = true;
+            while (tryMore) {
+                tryMore = false;
+                const Process *processToRun = nullptr;
+                string processName;
                 bool attemptedFromSequence = false;
-                if (!opportunisticMode && sequenceIndex < sequenceToAttempt.size()) {
-                    processNameToLog = sequenceToAttempt[sequenceIndex];
-                    processToTry = findProcessByName(processNameToLog);
+
+                // Try to get a process from the sequence or opportunistically
+                if (!opportunisticMode &&
+                    sequenceIndex < processSequence.size()) {
+                    processName = processSequence[sequenceIndex];
+                    processToRun = getProcessByName(processName);
                     attemptedFromSequence = true;
                 } else {
                     opportunisticMode = true;
-                    const Process* bestOpportunisticChoice = nullptr;
-                    for(const auto& pair : processLookupMap_) {
-                        const Process* potentialProcess = pair.second;
-                        if (canProcessStart(potentialProcess, result.finalStocks)) {
-                            bestOpportunisticChoice = potentialProcess;
-                            processNameToLog = potentialProcess->name;
+                    for (const auto &[name, process] : processMap) {
+                        if (canStartProcess(process, result.finalStocks)) {
+                            processToRun = process;
+                            processName = name;
                             break;
                         }
                     }
-                    processToTry = bestOpportunisticChoice;
-                    if (!processToTry) break;
                 }
-                if (processToTry) {
-                    if (canProcessStart(processToTry, result.finalStocks) && (currentTime + processToTry->nbCycle <= simulationTimeLimit_)) {
-                        // std::cerr << "DEBUG: t=" << currentTime << ": Starting process '" << processNameToLog << "'" << std::endl; // DEBUG
-                        for (const auto& input : processToTry->inputs) { result.finalStocks[input.first] -= input.second; }
-                        runningProcessesQueue.push({processToTry, currentTime + processToTry->nbCycle});
-                        result.logs.push_back({currentTime, processNameToLog});
-                        executedProcessCount++;
-                        processStartedThisCycle = true;
-                        tryStartingMore = true;
-                        if (attemptedFromSequence) { sequenceIndex++; } // Avance SEULEMENT si succès ET depuis séquence
+
+                if (processToRun) {
+                    // Try to start the process if enough resources are
+                    // available
+                    if (canStartProcess(processToRun, result.finalStocks) &&
+                        (currentTime + processToRun->nbCycle <= timeLimit)) {
+
+                        // Consume inputs
+                        for (const auto &[resource, quantity] :
+                             processToRun->inputs) {
+                            result.finalStocks[resource] -= quantity;
+                        }
+
+                        // Add to running processes queue
+                        runningProcesses.push(
+                            {processToRun,
+                             currentTime + processToRun->nbCycle});
+                        result.executionLog.push_back(
+                            {currentTime, processName});
+                        processesExecuted++;
+                        processStarted = true;
+                        tryMore = true;
+
+                        // Move to next process in sequence only if successful
+                        if (attemptedFromSequence) {
+                            sequenceIndex++;
+                        }
                     } else {
-                        // Échec
-                        // Ne PAS avancer sequenceIndex si échec depuis séquence
-                         if(!attemptedFromSequence) tryStartingMore = false;
+                        // We couldn't start the process, only move to next if
+                        // opportunistic
+                        if (!attemptedFromSequence) {
+                            tryMore = false;
+                        }
                     }
                 } else {
-                    if (attemptedFromSequence) { sequenceIndex++; } // Avance si nom invalide
-                    if (!opportunisticMode && sequenceIndex >= sequenceToAttempt.size()) { opportunisticMode = true; tryStartingMore = true; }
+                    // Invalid process name, skip it
+                    if (attemptedFromSequence) {
+                        sequenceIndex++;
+                    }
+
+                    // Switch to opportunistic mode if sequence is exhausted
+                    if (!opportunisticMode &&
+                        sequenceIndex >= processSequence.size()) {
+                        opportunisticMode = true;
+                        tryMore = true;
+                    }
                 }
             }
         }
 
-        if (processStartedThisCycle || resourcesUpdated) {
-             if (currentTime >= simulationTimeLimit_) { result.reachedTimeLimit = true; break; }
-             continue;
-        } else {
-            if (runningProcessesQueue.empty()) {
-                 // std::cerr << "DEBUG: t=" << currentTime << ": Queue empty and no action. Breaking loop." << std::endl; // DEBUG
-                 break;
+        // Advance time if no process was started and no stocks were updated
+        if (!processStarted && !stocksUpdated) {
+            if (runningProcesses.empty()) {
+                break;
             } else {
-                int nextCompletionTime = runningProcessesQueue.top().completionTime;
-                if (nextCompletionTime > simulationTimeLimit_) { currentTime = simulationTimeLimit_; result.reachedTimeLimit = true; }
-                else {
-                    if (nextCompletionTime <= currentTime) { currentTime++; } // Sécurité anti-blocage minimale
-                    else { currentTime = nextCompletionTime; }
+                int nextCompletionTime = runningProcesses.top().completionTime;
+                if (nextCompletionTime > timeLimit) {
+                    currentTime = timeLimit;
+                    result.timeoutReached = true;
+                } else {
+                    // Make sure time advances at least by 1 to avoid infinite
+                    // loops
+                    currentTime = max(currentTime + 1, nextCompletionTime);
                 }
             }
         }
-         if (currentTime > simulationTimeLimit_) { currentTime = simulationTimeLimit_; result.reachedTimeLimit = true; break; }
-    } // Fin while
 
-    // --- Dernière passe de complétion ---
-     while (!runningProcessesQueue.empty() && runningProcessesQueue.top().completionTime <= simulationTimeLimit_) {
-         RunningProcessInfo finishedProcess = runningProcessesQueue.top();
-         runningProcessesQueue.pop();
-         if (finishedProcess.processDetails) {
-              // std::cerr << "DEBUG: t=" << currentTime << ": Finishing process '" << finishedProcess.processDetails->name << "' in final pass." << std::endl; // DEBUG
-              for (const auto& output : finishedProcess.processDetails->outputs) {
-                 result.finalStocks[output.first] += output.second;
-              }
-         }
-     }
+        if (currentTime > timeLimit) {
+            currentTime = timeLimit;
+            result.timeoutReached = true;
+            break;
+        }
+    }
 
-    // --- Calcul Final du Fitness (SIMPLIFIÉ) ---
+    // Process any remaining completions within the time limit
+    while (!runningProcesses.empty() &&
+           runningProcesses.top().completionTime <= timeLimit) {
+        RunningProcess finishedProcess = runningProcesses.top();
+        runningProcesses.pop();
+
+        if (finishedProcess.processPtr) {
+            for (const auto &[resource, quantity] :
+                 finishedProcess.processPtr->outputs) {
+                result.finalStocks[resource] += quantity;
+            }
+        }
+    }
+
+    // Calculate final cycle time
+    if (!result.executionLog.empty()) {
+        int maxEndTime = 0;
+        for (const auto &[startTime, processName] : result.executionLog) {
+            const Process *proc = getProcessByName(processName);
+            if (proc) {
+                maxEndTime = max(maxEndTime, startTime + proc->nbCycle);
+            }
+        }
+        result.finalCycle = min(maxEndTime, timeLimit);
+    }
+
+    // Calculate fitness based on optimization goals
     result.fitness = 0.0;
-    const auto& optimizationGoals = systemConfig_.getOptimizeGoal();
+    const auto &goals = config.getOptimizeGoal();
 
-    if (executedProcessCount == 0 && result.logs.empty()) {
+    // If no processes were executed, assign minimum fitness
+    if (processesExecuted == 0 && result.executionLog.empty()) {
         result.fitness = -1.0e18;
-        result.finalCycle = currentTime;
         return result;
     }
 
-    bool timeIsGoal = false;
-    if (!result.logs.empty()) {
-        int max_end_time = 0;
-        for(const auto& log : result.logs) {
-            const Process* proc = findProcessByName(log.second);
-            if (proc) { max_end_time = std::max(max_end_time, log.first + proc->nbCycle); }
-        }
-        result.finalCycle = std::min(max_end_time, simulationTimeLimit_);
-    } else {
-         result.finalCycle = 0;
-    }
-
-    // *** FITNESS SIMPLIFIÉE ***
-    for (const std::string& goal : optimizationGoals) {
+    bool optimizeTime = false;
+    for (const string &goal : goals) {
         if (goal == "time") {
-            timeIsGoal = true;
+            optimizeTime = true;
             result.fitness += 10000.0 / (1.0 + result.finalCycle);
         } else {
-            // Donner un poids UNIQUEMENT à l'objectif final demandé
+            // Add weighted value of specified resource to fitness
             double stockValue = 0;
             if (result.finalStocks.count(goal)) {
                 stockValue = static_cast<double>(result.finalStocks.at(goal));
             }
-            // Mettre un poids élevé pour l'objectif final, 0 pour le reste
-            double weight = 1000.0; // Poids générique élevé pour l'objectif
-            result.fitness += stockValue * weight;
+            result.fitness += stockValue * 1000.0;
         }
     }
 
-    // Garder un bonus d'activité TRÈS faible pour départager les ex æquo
-    result.fitness += executedProcessCount * 1e-9;
+    // Small bonus for more processes executed (tie-breaker)
+    result.fitness += processesExecuted * 1e-9;
 
-    // Pénalité de blocage (inchangée)
-    if (!timeIsGoal && currentTime <= simulationTimeLimit_ && runningProcessesQueue.empty() && opportunisticMode) {
-         result.fitness *= 0.5;
+    // Penalty if we're not optimizing time and we ran out of processes to run
+    if (!optimizeTime && currentTime <= timeLimit && runningProcesses.empty() &&
+        opportunisticMode) {
+        result.fitness *= 0.5;
     }
-     if (!std::isfinite(result.fitness)) {
-          std::cerr << "Warning: Calculated fitness is not finite (" << result.fitness << "). Resetting to large negative." << std::endl;
-          result.fitness = -1.0e17;
-     }
 
-    // std::cerr << "DEBUG: Final Fitness = " << result.fitness << std::endl; // DEBUG
     return result;
 }

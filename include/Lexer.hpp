@@ -13,6 +13,6 @@ class Lexer {
     int nextInteger();
 
   private:
-    const std::string &input_;
-    size_t pos_;
+    const std::string &input;
+    size_t position;
 };

@@ -15,7 +15,7 @@ class Config {
     const std::vector<std::string> &getOptimizeGoal() const;
 
   private:
-    std::vector<Stock> stocks_;
-    std::vector<Process> processes_;
-    std::vector<std::string> optimizeGoal_;
+    std::vector<Stock> stocks;
+    std::vector<Process> processes;
+    std::vector<std::string> optimizeGoal;
 };

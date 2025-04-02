@@ -1,105 +1,91 @@
 #include "ProcessManager.hpp"
+#include <algorithm>
 #include <iostream>
-#include <vector>
-#include <map>
-#include <string>
-#include <limits>
-#include <algorithm> // Pour std::max utilisé dans le calcul du temps final affiché
-#include <set>       // Pour afficher tous les stocks pertinents
+#include <set>
 
-// Constructeur (inchangé)
-ProcessManager::ProcessManager(const Config& config, int delayLimit)
-    : config_(config),
-      simulator_(config, delayLimit),
-      geneticAlgorithm_(config, simulator_, 100, 0.05, 0.7, 2, 50, 150),
-      delayLimit_(delayLimit)
-{}
+using namespace std;
 
-// Lance l'exécution (inchangé)
+ProcessManager::ProcessManager(const Config &config, int timeLimit)
+    : config(config), simulator(config, timeLimit),
+      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 2, 50, 150),
+      timeLimit(timeLimit) {}
+
 void ProcessManager::run() {
-    std::cout << "Nice file! "
-              << config_.getProcesses().size() << " processes, "
-              << config_.getStocks().size() << " initial stocks, "
-              << config_.getOptimizeGoal().size() << " optimization goal(s)" << std::endl;
-    std::cout << "Evaluating using Genetic Algorithm..." << std::endl;
-    int numberOfGenerations = 100;
-    Individual bestSolution = geneticAlgorithm_.runEvolution(numberOfGenerations);
-    std::cout << "Optimization complete." << std::endl;
+    cout << "Nice file! " << config.getProcesses().size() << " processes, "
+         << config.getStocks().size() << " initial stocks, "
+         << config.getOptimizeGoal().size() << " optimization goal(s)" << endl;
+
+    cout << "Evaluating using Genetic Algorithm..." << endl;
+
+    int generations = 100;
+    Individual bestSolution = geneticAlgorithm.runEvolution(generations);
+
+    cout << "Optimization complete." << endl;
     generateOutput(bestSolution);
 }
 
-// Génère la sortie finale en utilisant SimulationResult
-void ProcessManager::generateOutput(const Individual& bestSolution) {
-    std::cout << "----------------------------------------" << std::endl;
-    std::cout << "Best solution found:" << std::endl;
+void ProcessManager::generateOutput(const Individual &bestSolution) {
+    cout << "----------------------------------------" << endl;
+    cout << "Best solution found:" << endl;
 
-    // *** Exécuter la simulation UNE SEULE FOIS pour obtenir tous les résultats ***
-    Simulator::SimulationResult finalResult = simulator_.calculateFitnessAndLogs(
-        bestSolution.processExecutionAttemptSequence);
+    // Run the simulation once to get complete results
+    Simulator::SimulationResult result =
+        simulator.runSimulation(bestSolution.processSequence);
 
-    // Utiliser les résultats retournés
-    double finalFitness = finalResult.fitness;
-    const auto& finalExecutionLogs = finalResult.logs;
-    const auto& stocksAtEnd = finalResult.finalStocks; // Stocks finaux corrects
-    int finalCycle = finalResult.finalCycle;           // Temps final correct
-    bool reachedTimeLimit = finalResult.reachedTimeLimit; // Indicateur de limite atteinte
+    cout << "Final Fitness Score: " << result.fitness << endl;
 
-     std::cout << "Final Fitness Score: " << finalFitness << std::endl;
-     std::cout << "Execution Log (Format: <cycle>:<process_name>):" << std::endl;
-
-    // Afficher les logs d'exécution (inchangé)
-    if (finalExecutionLogs.empty()) {
-        std::cout << "(No processes executed)" << std::endl;
+    // Display execution log
+    if (result.executionLog.empty()) {
+        cout << "(No processes executed)" << endl;
     } else {
-        for (const auto& log : finalExecutionLogs) {
-            std::cout << log.first << ":" << log.second << std::endl;
+        for (const auto &[cycle, processName] : result.executionLog) {
+            cout << cycle << ":" << processName << endl;
         }
     }
 
-    std::cout << "----------------------------------------" << std::endl;
+    cout << "----------------------------------------" << endl;
 
-    // Afficher le message de fin basé sur le résultat de la simulation
-    // Utiliser le format de l'exemple KrpSim si possible
-    if (finalExecutionLogs.empty()) {
-         std::cout << "No process could be executed within the time limit (" << delayLimit_ << ")." << std::endl;
-    } else if (!reachedTimeLimit && finalCycle < delayLimit_) {
-         // Si on n'a pas atteint la limite et que le dernier événement est avant,
-         // on peut supposer qu'aucun autre processus n'était possible.
-         std::cout << "no more process doable at time " << finalCycle << std::endl;
-    }
-     else {
-         // Si on a atteint la limite ou si le dernier événement se termine pile à la limite
-          std::cout << "Simulation reached time limit at cycle " << delayLimit_ << "." << std::endl;
-          // Ou on pourrait aussi utiliser le message "no more process doable..." s'il n'y a plus rien dans la queue à la fin?
-          // Gardons simple pour l'instant.
+    // Display completion message
+    if (result.executionLog.empty()) {
+        cout << "No process could be executed within the time limit ("
+             << timeLimit << ")." << endl;
+    } else if (!result.timeoutReached && result.finalCycle < timeLimit) {
+        cout << "no more process doable at time " << result.finalCycle << endl;
+    } else {
+        cout << "Simulation reached time limit at cycle " << timeLimit << "."
+             << endl;
     }
 
+    // Display final stock levels
+    cout << "Stock:" << endl;
 
-    // --- Affichage des Stocks Finaux (Maintenant Correct) ---
-    std::cout << "Stock:" << std::endl; // Format requis par le sujet
+    // Collect all stock names that should be displayed
+    set<string> relevantStocks;
 
-    // Pour afficher tous les stocks pertinents (initiaux + produits), même à zéro.
-    std::set<std::string> relevantStocks;
-    // Ajouter les stocks initiaux
-    for(const auto& stock : config_.getStocks()) {
+    // Add initial stocks
+    for (const auto &stock : config.getStocks()) {
         relevantStocks.insert(stock.name);
     }
-    // Ajouter les stocks mentionnés dans les processus (inputs/outputs)
-    for(const auto& proc : config_.getProcesses()) {
-        for(const auto& input : proc.inputs) relevantStocks.insert(input.first);
-        for(const auto& output : proc.outputs) relevantStocks.insert(output.first);
-    }
 
-    // Afficher chaque stock pertinent avec sa valeur finale
-    for(const std::string& stockName : relevantStocks) {
-        int finalQuantity = 0;
-        auto it = stocksAtEnd.find(stockName);
-        if (it != stocksAtEnd.end()) {
-            finalQuantity = it->second;
+    // Add stocks mentioned in processes
+    for (const auto &process : config.getProcesses()) {
+        for (const auto &[resource, _] : process.inputs) {
+            relevantStocks.insert(resource);
         }
-        // Afficher au format "nom => quantité"
-        std::cout << "  " << stockName << " => " << finalQuantity << std::endl;
+        for (const auto &[resource, _] : process.outputs) {
+            relevantStocks.insert(resource);
+        }
     }
 
-    std::cout << "----------------------------------------" << std::endl;
+    // Display each stock
+    for (const string &stockName : relevantStocks) {
+        int quantity = 0;
+        auto it = result.finalStocks.find(stockName);
+        if (it != result.finalStocks.end()) {
+            quantity = it->second;
+        }
+        cout << "  " << stockName << " => " << quantity << endl;
+    }
+
+    cout << "----------------------------------------" << endl;
 }
