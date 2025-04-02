@@ -1,6 +1,6 @@
 NAME = krpsim
 CXX = g++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude -g3 -fsanitize=address
+CXXFLAGS = -Wall -Wextra -Werror -std=c++17 -Iinclude -g -fsanitize=address
 
 SRC := $(shell find src -type f -name "*.cpp" ! -name "*tests*")
 
