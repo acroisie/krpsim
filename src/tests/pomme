@@ -27,5 +27,5 @@ vente_flan:(flan:10):(euro:300):30
 #
 #
 #optimize:(benefice)
-optimize:(l)
+optimize:(euro)
 #

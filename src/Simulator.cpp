@@ -1,53 +1,60 @@
 #include "Simulator.hpp"
-#include <iostream> // Pour debug éventuel
-#include <limits>   // Pour std::numeric_limits
-#include <queue>    // Pour std::priority_queue
+#include <iostream>
+#include <limits>
+#include <queue>
 #include <map>
 #include <vector>
 #include <string>
-#include <set>      // Pour suivre les processus déjà tentés
-#include <algorithm> // Pour std::min
+#include <set>
+#include <algorithm> // Pour std::min, std::max
 #include <cmath>     // Pour std::isfinite
+#include <stdexcept> // Pour std::runtime_error
 
-// Constructeur du Simulateur
+// Constructeur (inchangé)
 Simulator::Simulator(const Config& config, int timeLimit)
-    : systemConfig_(config), simulationTimeLimit_(timeLimit) {}
-
-// Helper : Trouve un processus par son nom
-const Process* Simulator::findProcessByName(const std::string& name) const {
+    : systemConfig_(config), simulationTimeLimit_(timeLimit)
+{
+    processLookupMap_.clear();
     for (const auto& proc : systemConfig_.getProcesses()) {
-        if (proc.name == name) {
-            return &proc;
+        if (processLookupMap_.count(proc.name)) {
+             throw std::runtime_error("Simulator Error: Duplicate process name found in config: " + proc.name);
         }
+        processLookupMap_[proc.name] = &proc;
     }
+     if (systemConfig_.getProcesses().empty()) {
+          std::cerr << "Warning: Simulator initialized with no processes defined in the configuration." << std::endl;
+     }
+     // Debug: Vérifier si la map est peuplée
+     // std::cout << "Debug: processLookupMap_ contains " << processLookupMap_.size() << " entries." << std::endl;
+}
+
+// Helper : Trouve un processus par son nom (inchangé)
+const Process* Simulator::findProcessByName(const std::string& name) const {
+    auto it = processLookupMap_.find(name);
+    if (it != processLookupMap_.end()) { return it->second; }
     return nullptr;
 }
 
-// Helper : Vérifie si un processus peut démarrer avec les stocks actuels
+// Helper : Vérifie si un processus peut démarrer (inchangé)
 bool Simulator::canProcessStart(const Process* process, const std::map<std::string, int>& currentStocks) const {
-    if (!process) {
-        return false;
-    }
+    if (!process) { return false; }
     for (const auto& input : process->inputs) {
         auto it = currentStocks.find(input.first);
-        if (it == currentStocks.end() || it->second < input.second) {
-            return false;
-        }
+        if (it == currentStocks.end() || it->second < input.second) { return false; }
     }
     return true;
 }
 
 // Fonction CLÉ : Calcule le fitness et génère les logs d'exécution
-double Simulator::calculateFitnessAndLogs(
-    const std::vector<std::string>& sequenceToAttempt,
-    std::vector<std::pair<int, std::string>>& executionLogs) {
+Simulator::SimulationResult Simulator::calculateFitnessAndLogs(
+    const std::vector<std::string>& sequenceToAttempt) {
 
-    // --- 1. Initialisation de l'état de la simulation ---
-    std::map<std::string, int> currentStocks;
+    SimulationResult result;
+    result.finalStocks.clear();
     for (const auto& stock : systemConfig_.getStocks()) {
-        currentStocks[stock.name] = stock.quantity;
+        result.finalStocks[stock.name] = stock.quantity;
     }
-    executionLogs.clear();
+    result.logs.clear();
     int currentTime = 0;
     int executedProcessCount = 0;
     size_t sequenceIndex = 0;
@@ -55,167 +62,191 @@ double Simulator::calculateFitnessAndLogs(
     std::priority_queue<RunningProcessInfo, std::vector<RunningProcessInfo>, std::greater<RunningProcessInfo>> runningProcessesQueue;
     bool opportunisticMode = false;
 
-    // --- 2. Boucle de Simulation Principale ---
-    while (currentTime < simulationTimeLimit_) {
+    while (currentTime <= simulationTimeLimit_) {
 
-        // --- A. Compléter les processus terminés ---
+        // --- A. Compléter les processus ---
         bool resourcesUpdated = false;
         while (!runningProcessesQueue.empty() && runningProcessesQueue.top().completionTime <= currentTime) {
             RunningProcessInfo finishedProcess = runningProcessesQueue.top();
             runningProcessesQueue.pop();
-            if (finishedProcess.processDetails) {
+            if (finishedProcess.completionTime <= simulationTimeLimit_ && finishedProcess.processDetails) {
                  for (const auto& output : finishedProcess.processDetails->outputs) {
-                    currentStocks[output.first] += output.second;
+                    result.finalStocks[output.first] += output.second;
                     resourcesUpdated = true;
                  }
             }
         }
+        if (currentTime >= simulationTimeLimit_) {
+             result.reachedTimeLimit = true;
+             break;
+        }
 
         // --- B. Essayer de lancer de nouveaux processus ---
         bool processStartedThisCycle = false;
-        bool tryStartingMore = true;
-        while (tryStartingMore) {
-            tryStartingMore = false;
-            const Process* processToTry = nullptr;
-            std::string processNameToLog;
-            bool attemptedFromSequence = false;
+        if (currentTime < simulationTimeLimit_) {
+            bool tryStartingMore = true;
+            while (tryStartingMore) {
+                tryStartingMore = false;
+                const Process* processToTry = nullptr;
+                std::string processNameToLog;
+                bool attemptedFromSequence = false;
 
-            // Choisir quel processus essayer:
-            if (!opportunisticMode && sequenceIndex < sequenceToAttempt.size()) {
-                // Mode guidé: essayer le prochain de la séquence
-                processNameToLog = sequenceToAttempt[sequenceIndex];
-                processToTry = findProcessByName(processNameToLog);
-                attemptedFromSequence = true;
-                // NE PAS incrémenter sequenceIndex ici, seulement si succès
-            } else {
-                 // Mode opportuniste
-                 opportunisticMode = true;
-                 const Process* bestOpportunisticChoice = nullptr;
-                 for(const auto& potentialProcess : systemConfig_.getProcesses()) {
-                     if (canProcessStart(&potentialProcess, currentStocks)) {
-                         bestOpportunisticChoice = &potentialProcess;
-                         processNameToLog = potentialProcess.name;
-                         break;
-                     }
-                 }
-                 processToTry = bestOpportunisticChoice;
-                 if (!processToTry) break; // Rien à faire en opportuniste
-            }
-
-            // Si on a trouvé un processus à essayer
-            if (processToTry) {
-                if (canProcessStart(processToTry, currentStocks)) {
-                    // Lancer le processus
-                    for (const auto& input : processToTry->inputs) {
-                        currentStocks[input.first] -= input.second;
+                // Choisir quel processus essayer:
+                if (!opportunisticMode && sequenceIndex < sequenceToAttempt.size()) {
+                    processNameToLog = sequenceToAttempt[sequenceIndex];
+                    processToTry = findProcessByName(processNameToLog);
+                    attemptedFromSequence = true;
+                    // NE PAS AVANCER sequenceIndex ici
+                } else {
+                    opportunisticMode = true; // Activer ou rester en mode opportuniste
+                    const Process* bestOpportunisticChoice = nullptr;
+                    for(const auto& pair : processLookupMap_) {
+                        const Process* potentialProcess = pair.second;
+                        if (canProcessStart(potentialProcess, result.finalStocks)) {
+                            bestOpportunisticChoice = potentialProcess;
+                            processNameToLog = potentialProcess->name;
+                            break; // Stratégie simple: prendre le premier possible
+                        }
                     }
-                    runningProcessesQueue.push({processToTry, currentTime + processToTry->nbCycle});
-                    executionLogs.push_back({currentTime, processNameToLog});
-                    executedProcessCount++;
-                    processStartedThisCycle = true;
-                    tryStartingMore = true; // Essayer d'en lancer un autre
+                    processToTry = bestOpportunisticChoice;
+                    if (!processToTry) break; // Rien à faire en opportuniste pour ce tour
+                }
 
-                    // Si on a réussi en mode guidé, on incrémente l'index de la séquence
-                    if (attemptedFromSequence) {
-                        sequenceIndex++;
+                // Si on a trouvé un processus à essayer
+                if (processToTry) {
+                    if (canProcessStart(processToTry, result.finalStocks) && (currentTime + processToTry->nbCycle <= simulationTimeLimit_)) {
+                        // Lancer le processus
+                        for (const auto& input : processToTry->inputs) {
+                            result.finalStocks[input.first] -= input.second;
+                        }
+                        runningProcessesQueue.push({processToTry, currentTime + processToTry->nbCycle});
+                        result.logs.push_back({currentTime, processNameToLog});
+                        executedProcessCount++;
+                        processStartedThisCycle = true;
+                        tryStartingMore = true; // Essayer d'en lancer un autre
+
+                        // *** CORRECTION : Avancer sequenceIndex SEULEMENT si succès ET depuis séquence ***
+                        if (attemptedFromSequence) {
+                            sequenceIndex++;
+                        }
+                    } else {
+                        // Échec du lancement (ressources ou temps)
+                        // *** CORRECTION : Ne PAS avancer sequenceIndex en cas d'échec ***
+                        // if (attemptedFromSequence) {
+                        //     sequenceIndex++; // <- Suppression de cette ligne
+                        // }
+                        // Si on a échoué à lancer depuis la séquence, on essaiera à nouveau au prochain cycle
+                        // ou le mode opportuniste prendra le relais si la séquence finit.
+                        // Si on est en mode opportuniste et qu'on échoue (ne devrait pas arriver), on sort.
+                        if(!attemptedFromSequence) tryStartingMore = false;
                     }
                 } else {
-                    // Échec du lancement de CE processus
-                    // Si on était en mode guidé, on passe au suivant dans la séquence lors de la prochaine itération externe
-                     if (attemptedFromSequence) {
-                         sequenceIndex++; // On passe au suivant de la séquence même si celui-ci a échoué
-                     }
-                     // Si on était en opportuniste et qu'on échoue (ne devrait pas arriver si canProcessStart est appelé avant), on break
+                    // processToTry est nullptr (nom invalide dans séquence ou fin de séquence)
+                    if (attemptedFromSequence) {
+                        // Nom invalide dans la séquence, il faut passer au suivant
+                         sequenceIndex++; // <<< On avance ici pour ignorer l'étape invalide
+                    }
+                    // Vérifier si on passe en mode opportuniste
+                    if (!opportunisticMode && sequenceIndex >= sequenceToAttempt.size()) {
+                        opportunisticMode = true;
+                        tryStartingMore = true; // Relancer la boucle interne pour tester l'opportuniste
+                    }
                 }
-            } else {
-                 // processToTry est nullptr (nom invalide ou fin de séquence)
-                 if (attemptedFromSequence) {
-                      sequenceIndex++; // Passer outre le nom invalide dans la séquence
-                 }
-                 // Si on est en fin de séquence, on passera en mode opportuniste au tour suivant
-                 if (!opportunisticMode && sequenceIndex >= sequenceToAttempt.size()) {
-                     opportunisticMode = true;
-                     tryStartingMore = true; // Relancer la boucle interne pour tester l'opportuniste
-                 }
-            }
-        } // Fin de la boucle interne while(tryStartingMore)
+            } // Fin de la boucle interne while(tryStartingMore)
+        } // Fin if (currentTime < simulationTimeLimit_)
+
 
         // --- C. Avancer le Temps ---
         if (processStartedThisCycle || resourcesUpdated) {
-            continue; // Rester au même temps pour voir si autre chose peut démarrer
+             if (currentTime >= simulationTimeLimit_) { result.reachedTimeLimit = true; break; }
+             continue;
         } else {
-            // Rien n'a démarré, rien ne s'est terminé
             if (runningProcessesQueue.empty()) {
-                // Plus rien en cours et rien ne peut démarrer -> Simulation terminée/bloquée
                 break;
             } else {
-                // Avancer au temps de complétion du prochain processus
                 int nextCompletionTime = runningProcessesQueue.top().completionTime;
-                if (nextCompletionTime >= simulationTimeLimit_) {
-                    currentTime = simulationTimeLimit_;
-                    break;
+                if (nextCompletionTime > simulationTimeLimit_) {
+                     currentTime = simulationTimeLimit_;
+                     result.reachedTimeLimit = true;
+                } else if (nextCompletionTime <= currentTime) {
+                     // Sécurité anti-blocage
+                     currentTime++;
+                } else {
+                    currentTime = nextCompletionTime;
                 }
-                currentTime = nextCompletionTime;
             }
         }
-    } // Fin de la boucle while (currentTime < simulationTimeLimit_)
+         if (currentTime > simulationTimeLimit_) {
+              currentTime = simulationTimeLimit_;
+              result.reachedTimeLimit = true;
+              break;
+         }
+    } // Fin while (currentTime <= simulationTimeLimit_)
 
-    // --- D. Nettoyage final ---
-     currentTime = std::min(currentTime, simulationTimeLimit_);
+    // --- D. Dernière passe de complétion ---
+     while (!runningProcessesQueue.empty() && runningProcessesQueue.top().completionTime <= simulationTimeLimit_) {
+         RunningProcessInfo finishedProcess = runningProcessesQueue.top();
+         runningProcessesQueue.pop();
+         if (finishedProcess.processDetails) {
+              for (const auto& output : finishedProcess.processDetails->outputs) {
+                 result.finalStocks[output.first] += output.second;
+              }
+         }
+     }
 
     // --- 3. Calcul Final du Fitness ---
-    double fitness = 0.0;
+    // (Le reste de la fonction est inchangé par rapport à v7)
+    result.fitness = 0.0; // Renommé pour clarté
     const auto& optimizationGoals = systemConfig_.getOptimizeGoal();
 
-    // *** CORRECTION ICI ***
-    // Retourner un grand négatif au lieu de lowest() si rien n'est exécuté
     if (executedProcessCount == 0) {
-        // Utiliser une valeur négative importante mais évitable pour les calculs de shift
-        // std::cerr << "Warning: No processes executed for a sequence." << std::endl; // Debug
-        return -1.0e18;
+        result.fitness = -1.0e18;
+        result.finalCycle = currentTime;
+        return result;
     }
 
-    // Calcul basé sur les objectifs
     bool timeIsGoal = false;
-    int finalEventTime = 0; // Calculer le temps final pour l'objectif 'time'
-
-    if (!executionLogs.empty()) {
-        const auto& lastLog = executionLogs.back();
-        const Process* lastProc = findProcessByName(lastLog.second);
-        if(lastProc) {
-            finalEventTime = lastLog.first + lastProc->nbCycle;
+    if (!result.logs.empty()) {
+        int max_end_time = 0;
+        for(const auto& log : result.logs) {
+            const Process* proc = findProcessByName(log.second);
+            if (proc) {
+                max_end_time = std::max(max_end_time, log.first + proc->nbCycle);
+            }
         }
+        result.finalCycle = std::min(max_end_time, simulationTimeLimit_);
+    } else {
+         result.finalCycle = 0;
     }
-    finalEventTime = std::min(finalEventTime, simulationTimeLimit_);
-
 
     for (const std::string& goal : optimizationGoals) {
         if (goal == "time") {
             timeIsGoal = true;
-            // Fitness inversement proportionnel au temps.
-            fitness += 10000.0 / (1.0 + finalEventTime);
+            result.fitness += 10000.0 / (1.0 + result.finalCycle);
         } else {
-            // Maximiser un stock spécifique
-            if (currentStocks.count(goal)) {
-                fitness += static_cast<double>(currentStocks.at(goal));
+            double stockValue = 0;
+            if (result.finalStocks.count(goal)) {
+                stockValue = static_cast<double>(result.finalStocks.at(goal));
             }
+            double weight = 1.0;
+            if (goal == "armoire") { weight = 100.0; }
+            if (goal == "euro") { weight = 1.0; }
+            if (goal == "boite") { weight = 5.0; }
+            if (goal == "tarte_pomme" || goal == "tarte_citron" || goal == "flan") { weight = 0.1; }
+            result.fitness += stockValue * weight;
         }
     }
 
-    // Bonus/Malus additionnels:
-    fitness += executedProcessCount * 0.01; // Bonus activité
+    result.fitness += executedProcessCount * (simulationTimeLimit_ > 0 ? (50.0 / simulationTimeLimit_) : 0.01);
 
-    // Malus si bloqué avant la fin (et time n'est pas l'objectif)
     if (!timeIsGoal && currentTime < simulationTimeLimit_ && runningProcessesQueue.empty() && opportunisticMode) {
-         fitness *= 0.5; // Pénalité blocage
+         result.fitness *= 0.5;
     }
 
-    // Vérifier si le fitness est valide avant de retourner
-     if (!std::isfinite(fitness)) {
-          std::cerr << "Warning: Calculated fitness is not finite (" << fitness << "). Resetting to large negative." << std::endl;
-          return -1.0e17; // Retourner une autre grande valeur négative
+     if (!std::isfinite(result.fitness)) {
+          std::cerr << "Warning: Calculated fitness is not finite (" << result.fitness << "). Resetting to large negative." << std::endl;
+          result.fitness = -1.0e17;
      }
 
-
-    return fitness;
+    return result;
 }
