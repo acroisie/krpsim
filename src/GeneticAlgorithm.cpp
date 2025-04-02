@@ -61,14 +61,18 @@ void GeneticAlgorithm::initializePopulation() {
     std::cout << "Population initialized with " << populationSize_ << " individuals." << std::endl;
 }
 
-// evaluatePopulationFitness (inchangé)
+// Évalue le fitness de tous les individus de la population actuelle (Non-const)
 void GeneticAlgorithm::evaluatePopulationFitness() {
     for (auto& individual : currentPopulation_) {
-        std::vector<std::pair<int, std::string>> logs;
-        individual.fitnessScore = planningSimulator_.calculateFitnessAndLogs(
-            individual.processExecutionAttemptSequence, logs);
-         // Debug: Afficher les scores calculés
-         // std::cout << "  Evaluated fitness: " << individual.fitnessScore << std::endl;
+        // *** APPEL CORRIGÉ ICI ***
+        // Appeler la nouvelle fonction qui retourne SimulationResult
+        Simulator::SimulationResult result = planningSimulator_.calculateFitnessAndLogs(
+            individual.processExecutionAttemptSequence);
+        // Extraire le score de fitness du résultat
+        individual.fitnessScore = result.fitness;
+
+        // Debug: Afficher les scores calculés
+        // std::cout << "  Evaluated fitness: " << individual.fitnessScore << std::endl;
     }
      // Debug: Vérifier si tous les scores sont identiques et très bas
      /*
@@ -94,13 +98,29 @@ std::vector<size_t> GeneticAlgorithm::selectParentsViaRouletteWheel() {
      double maxFitness = std::numeric_limits<double>::lowest();
 
      for (const auto& indiv : currentPopulation_) {
-         if (indiv.fitnessScore < minFitness) minFitness = indiv.fitnessScore;
-         if (indiv.fitnessScore > maxFitness) maxFitness = indiv.fitnessScore;
+         // Ignorer les fitness invalides pour min/max
+         if (std::isfinite(indiv.fitnessScore)) {
+             if (indiv.fitnessScore < minFitness) minFitness = indiv.fitnessScore;
+             if (indiv.fitnessScore > maxFitness) maxFitness = indiv.fitnessScore;
+         }
      }
 
-     // Si tous les fitness sont identiques (et potentiellement très bas), la sélection par roue est inutile/impossible.
+     // Gérer le cas où aucun fitness valide n'a été trouvé
+     if (minFitness == std::numeric_limits<double>::max() || maxFitness == std::numeric_limits<double>::lowest()) {
+         std::cerr << "Warning: No valid fitness scores found in population. Selecting parents randomly." << std::endl;
+         selectedIndices.reserve(populationSize_);
+         std::uniform_int_distribution<size_t> randDist(0, currentPopulation_.empty() ? 0 : currentPopulation_.size() - 1);
+         for(int i = 0; i < populationSize_; ++i) {
+             if (currentPopulation_.empty()) break;
+             selectedIndices.push_back(randDist(randomGenerator_));
+         }
+         return selectedIndices;
+     }
+
+
+     // Si tous les fitness valides sont identiques
      if (minFitness == maxFitness) {
-          std::cout << "Warning: All individuals have the same fitness (" << minFitness << "). Selecting parents randomly." << std::endl;
+          std::cout << "Warning: All individuals have the same valid fitness (" << minFitness << "). Selecting parents randomly." << std::endl;
           selectedIndices.reserve(populationSize_);
           std::uniform_int_distribution<size_t> randDist(0, currentPopulation_.size() - 1);
           for(int i = 0; i < populationSize_; ++i) {
@@ -109,29 +129,25 @@ std::vector<size_t> GeneticAlgorithm::selectParentsViaRouletteWheel() {
           return selectedIndices;
      }
 
-
-     // *** CORRECTION ICI: S'assurer que le shift ne crée pas de problèmes avec des nombres énormes ***
-     // Utiliser une approche qui évite l'addition directe si minFitness est trop extrême.
-     // On peut normaliser les scores entre 0 et (max - min).
+     // Normalisation des scores entre 0.001 et ~1.001
      double range = maxFitness - minFitness;
-     if (range <= 0 || !std::isfinite(range)) { // Si range est invalide ou nul (devrait être couvert par le check précédent)
-         range = 1.0; // Éviter division par zéro
-     }
+     if (range <= 0 || !std::isfinite(range)) { range = 1.0; } // Sécurité
 
      std::vector<double> normalizedFitnessValues;
      normalizedFitnessValues.reserve(currentPopulation_.size());
      double totalNormalizedFitness = 0.0;
 
      for (const auto& indiv : currentPopulation_) {
-         // Normaliser entre 0 et 1 (approximativement, ajouter epsilon pour éviter 0 strict)
-         double normalized = (indiv.fitnessScore - minFitness) / range + 0.001;
+         double normalized = 0.001; // Score minimum si fitness invalide ou égal au min
+         if (std::isfinite(indiv.fitnessScore)) {
+              normalized = (indiv.fitnessScore - minFitness) / range + 0.001;
+         }
          normalizedFitnessValues.push_back(normalized);
          totalNormalizedFitness += normalized;
      }
 
 
      if (totalNormalizedFitness <= 0.0 || !std::isfinite(totalNormalizedFitness)) {
-         // Si même après normalisation ça échoue, sélection aléatoire
          std::cerr << "Warning: Total normalized fitness is non-positive or invalid (" << totalNormalizedFitness << "). Selecting parents randomly." << std::endl;
           selectedIndices.reserve(populationSize_);
           std::uniform_int_distribution<size_t> randDist(0, currentPopulation_.empty() ? 0 : currentPopulation_.size() - 1);
@@ -142,9 +158,8 @@ std::vector<size_t> GeneticAlgorithm::selectParentsViaRouletteWheel() {
           return selectedIndices;
      }
 
-     // Distribution pour choisir un point sur la roue normalisée
+     // Distribution et sélection par roue
      std::uniform_real_distribution<> dist(0.0, totalNormalizedFitness);
-
      selectedIndices.reserve(populationSize_);
      for (int i = 0; i < populationSize_; ++i) {
          double randomPoint = dist(randomGenerator_);
@@ -168,7 +183,7 @@ std::vector<size_t> GeneticAlgorithm::selectParentsViaRouletteWheel() {
 }
 
 
-// performCrossover (inchangé par rapport à v2)
+// performCrossover (inchangé)
 std::pair<Individual, Individual> GeneticAlgorithm::performCrossover(const Individual& parent1, const Individual& parent2) {
     std::uniform_real_distribution<> crossDist(0.0, 1.0);
     if (crossDist(randomGenerator_) > crossoverRate_) {
@@ -198,7 +213,7 @@ std::pair<Individual, Individual> GeneticAlgorithm::performCrossover(const Indiv
     return {Individual(childSeq1), Individual(childSeq2)};
 }
 
-// applyMutation (inchangé par rapport à v2)
+// applyMutation (inchangé)
 Individual GeneticAlgorithm::applyMutation(const Individual& individual) {
     Individual mutatedIndividual = individual;
     std::uniform_real_distribution<> probDist(0.0, 1.0);
@@ -227,7 +242,7 @@ Individual GeneticAlgorithm::applyMutation(const Individual& individual) {
     return mutatedIndividual;
 }
 
-// selectNextGeneration (inchangé par rapport à v2)
+// selectNextGeneration (inchangé)
 void GeneticAlgorithm::selectNextGeneration() {
     std::vector<Individual> newPopulation;
     newPopulation.reserve(populationSize_);
@@ -245,9 +260,7 @@ void GeneticAlgorithm::selectNextGeneration() {
          currentPopulation_ = newPopulation;
          return;
     }
-     // Vérifier si parentIndices est vide *avant* de créer la distribution
      if (parentIndices.empty()) {
-          // Gérer le cas où la population est remplie uniquement par élitisme
           currentPopulation_ = newPopulation;
           return;
      }
@@ -256,25 +269,17 @@ void GeneticAlgorithm::selectNextGeneration() {
     while (newPopulation.size() < static_cast<size_t>(populationSize_)) {
         size_t idx1_idx = parentDist(randomGenerator_);
         size_t idx2_idx = parentDist(randomGenerator_);
-        // Vérifier les limites au cas où parentIndices serait plus petit que prévu
-        if (idx1_idx >= parentIndices.size() || idx2_idx >= parentIndices.size()) {
-             std::cerr << "Error: Invalid parent index selected." << std::endl;
-             continue; // Sauter cette itération
-        }
+        if (idx1_idx >= parentIndices.size() || idx2_idx >= parentIndices.size()) { continue; }
         size_t index1 = parentIndices[idx1_idx];
         size_t index2 = parentIndices[idx2_idx];
-        // Vérifier les limites de currentPopulation_
-         if (index1 >= currentPopulation_.size() || index2 >= currentPopulation_.size()) {
-              std::cerr << "Error: Parent index out of bounds for current population." << std::endl;
-              continue; // Sauter cette itération
-         }
+         if (index1 >= currentPopulation_.size() || index2 >= currentPopulation_.size()) { continue; }
 
         int tries = 0;
         while (index1 == index2 && parentIndices.size() > 1 && tries < 10) {
             idx2_idx = parentDist(randomGenerator_);
-             if (idx2_idx >= parentIndices.size()) continue; // Vérif supplémentaire
+             if (idx2_idx >= parentIndices.size()) continue;
             index2 = parentIndices[idx2_idx];
-             if (index2 >= currentPopulation_.size()) continue; // Vérif supplémentaire
+             if (index2 >= currentPopulation_.size()) continue;
             tries++;
         }
         const Individual& parent1 = currentPopulation_[index1];
@@ -288,7 +293,7 @@ void GeneticAlgorithm::selectNextGeneration() {
     currentPopulation_ = newPopulation;
 }
 
-// getBestIndividual (inchangé par rapport à v2)
+// getBestIndividual (inchangé)
 Individual GeneticAlgorithm::getBestIndividual() const {
     if (currentPopulation_.empty()) { return Individual(); }
     auto bestIt = std::max_element(currentPopulation_.begin(), currentPopulation_.end(),
@@ -296,15 +301,19 @@ Individual GeneticAlgorithm::getBestIndividual() const {
     return *bestIt;
 }
 
-// runEvolution (inchangé par rapport à v2)
+// runEvolution (inchangé)
 Individual GeneticAlgorithm::runEvolution(int numberOfGenerations) {
     std::cout << "Starting genetic algorithm evolution for " << numberOfGenerations << " generations..." << std::endl;
     initializePopulation();
     Individual bestOverallIndividual;
+    // Initialiser bestOverallIndividual avec une fitness très basse pour la première comparaison
+    bestOverallIndividual.fitnessScore = std::numeric_limits<double>::lowest();
+
     for (int gen = 0; gen < numberOfGenerations; ++gen) {
         evaluatePopulationFitness();
         Individual currentBest = getBestIndividual();
-        if (gen == 0 || bestOverallIndividual.fitnessScore < -1e17 /* init value */ || currentBest.fitnessScore > bestOverallIndividual.fitnessScore) {
+        // Mettre à jour le meilleur global si nécessaire
+        if (gen == 0 || currentBest.fitnessScore > bestOverallIndividual.fitnessScore) {
              bestOverallIndividual = currentBest;
              std::cout << "Generation " << (gen + 1) << "/" << numberOfGenerations
                        << " - New Best Fitness: " << bestOverallIndividual.fitnessScore << std::endl;
@@ -317,7 +326,7 @@ Individual GeneticAlgorithm::runEvolution(int numberOfGenerations) {
     }
     evaluatePopulationFitness();
     Individual finalGenBest = getBestIndividual();
-     if (bestOverallIndividual.fitnessScore < -1e17 || finalGenBest.fitnessScore > bestOverallIndividual.fitnessScore) {
+     if (finalGenBest.fitnessScore > bestOverallIndividual.fitnessScore) {
           bestOverallIndividual = finalGenBest;
      }
     std::cout << "Evolution finished. Final best fitness found: " << bestOverallIndividual.fitnessScore << std::endl;
