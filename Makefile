@@ -1,21 +1,34 @@
 NAME = krpsim
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude -O3 -DNDEBUG
+CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude -O3
 
-SRC := $(shell find src -type f -name "*.cpp" ! -name "*tests*")
+SRC_DIR = src
+INCLUDE_DIR = include
+OBJ_DIR = obj
 
-OBJS := $(SRC:.cpp=.o)
+SRCS = $(SRC_DIR)/main.cpp \
+       $(SRC_DIR)/Config.cpp \
+       $(SRC_DIR)/Lexer.cpp \
+       $(SRC_DIR)/Parser.cpp \
+       $(SRC_DIR)/Simulator.cpp \
+       $(SRC_DIR)/GeneticAlgorithm.cpp \
+       $(SRC_DIR)/ProcessManager.cpp
+
+OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
 all: $(NAME)
 
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
 
-%.o: %.cpp
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
 clean:
-	rm -f $(OBJS)
+	rm -rf $(OBJ_DIR)
 
 fclean: clean
 	rm -f $(NAME)

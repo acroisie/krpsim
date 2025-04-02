@@ -10,8 +10,8 @@ class Parser {
     bool parse(Config &config);
 
   private:
-    std::string filename_;
-    bool optimizeFound_;
+    std::string filename;
+    bool optimizeFound;
 
     void parseLine(const std::string &line, Config &config);
     std::unordered_map<std::string, int> parseResourceList(class Lexer &lex);

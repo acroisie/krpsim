@@ -12,6 +12,7 @@ int main(int argc, char *argv[]) {
 
     Parser parser(argv[1]);
     Config config;
+
     if (!parser.parse(config)) {
         return 1;
     }
@@ -24,5 +25,6 @@ int main(int argc, char *argv[]) {
 
     ProcessManager manager(config, delay);
     manager.run();
+
     return 0;
 }
