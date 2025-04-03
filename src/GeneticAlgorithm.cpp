@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <unordered_map>
 
 using namespace std;
 
@@ -9,7 +10,7 @@ GeneticAlgorithm::GeneticAlgorithm(const Config &config, Simulator &simulator,
                                    int populationSize, double mutationRate,
                                    double crossoverRate, int eliteCount,
                                    int minSequenceLength, int maxSequenceLength)
-    : simulator(simulator), populationSize(populationSize),
+    : config(config), simulator(simulator), populationSize(populationSize),
       mutationRate(mutationRate), crossoverRate(crossoverRate),
       eliteCount(min(max(0, eliteCount), populationSize)),
       minSequenceLength(minSequenceLength),
@@ -17,6 +18,93 @@ GeneticAlgorithm::GeneticAlgorithm(const Config &config, Simulator &simulator,
     for (const auto &proc : config.getProcesses()) {
         processNames.push_back(proc.name);
     }
+}
+
+bool GeneticAlgorithm::canExecuteProcess(const Process* process, const std::map<std::string, int>& stocks) const {
+    if (!process) {
+        return false;
+    }
+
+    for (const auto& [resource, quantity] : process->inputs) {
+        auto stockIt = stocks.find(resource);
+        if (stockIt == stocks.end() || stockIt->second < quantity) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void GeneticAlgorithm::updateStocksAfterProcess(const Process* process, std::map<std::string, int>& stocks) const {
+    if (!process) {
+        return;
+    }
+    
+    // Consume inputs
+    for (const auto& [resource, quantity] : process->inputs) {
+        stocks[resource] -= quantity;
+    }
+    
+    // Add outputs
+    for (const auto& [resource, quantity] : process->outputs) {
+        stocks[resource] += quantity;
+    }
+}
+
+Individual GeneticAlgorithm::createSmartIndividual() {
+    // Initialize stocks from config
+    map<string, int> currentStocks;
+    for (const auto& stock : config.getStocks()) {
+        currentStocks[stock.name] = stock.quantity;
+    }
+    
+    // Create a mapping of process names to process pointers for quick lookup
+    unordered_map<string, const Process*> processMap;
+    for (const auto& process : config.getProcesses()) {
+        processMap[process.name] = &process;
+    }
+    
+    // Create sequence
+    vector<string> sequence;
+    int sequenceLength = 0;
+    int maxAttempts = maxSequenceLength * 2; // To avoid potential infinite loops
+    int attempts = 0;
+    
+    while (sequenceLength < maxSequenceLength && attempts < maxAttempts) {
+        attempts++;
+        
+        // Find executable processes
+        vector<const Process*> executableProcesses;
+        for (const auto& [name, proc] : processMap) {
+            if (canExecuteProcess(proc, currentStocks)) {
+                executableProcesses.push_back(proc);
+            }
+        }
+        
+        if (executableProcesses.empty()) {
+            // No executable processes found, break the loop
+            break;
+        }
+        
+        // Select a random executable process with preference for processes leading to optimization goals
+        uniform_int_distribution<size_t> dist(0, executableProcesses.size() - 1);
+        const Process* selectedProcess = executableProcesses[dist(randomGenerator)];
+        sequence.push_back(selectedProcess->name);
+        sequenceLength++;
+        
+        // Update stocks
+        updateStocksAfterProcess(selectedProcess, currentStocks);
+    }
+    
+    // If sequence is too short, pad it with random processes
+    // This helps maintain genetic diversity
+    if (sequence.size() < minSequenceLength) {
+        uniform_int_distribution<size_t> procDist(0, processNames.size() - 1);
+        while (sequence.size() < minSequenceLength) {
+            sequence.push_back(processNames[procDist(randomGenerator)]);
+        }
+    }
+    
+    return Individual(sequence);
 }
 
 Individual GeneticAlgorithm::createRandomIndividual() {
@@ -39,12 +127,20 @@ void GeneticAlgorithm::initializePopulation() {
     population.clear();
     population.reserve(populationSize);
 
-    for (int i = 0; i < populationSize; ++i) {
+    // Create a mix of smart and random individuals
+    // Smart individuals will guide the search, random ones maintain diversity
+    int smartCount = populationSize * 0.8; // 80% smart, 20% random
+    
+    for (int i = 0; i < smartCount; ++i) {
+        population.push_back(createSmartIndividual());
+    }
+    
+    for (int i = smartCount; i < populationSize; ++i) {
         population.push_back(createRandomIndividual());
     }
 
-    cout << "Population initialized with " << populationSize << " individuals."
-         << endl;
+    cout << "Population initialized with " << populationSize << " individuals: " 
+         << smartCount << " smart, " << (populationSize - smartCount) << " random." << endl;
 }
 
 void GeneticAlgorithm::evaluatePopulation() {
@@ -277,7 +373,7 @@ void GeneticAlgorithm::selectNextGeneration() {
             if (!population.empty()) {
                 newPopulation.push_back(population[0]);
             } else {
-                newPopulation.push_back(createRandomIndividual());
+                newPopulation.push_back(createSmartIndividual());
             }
         }
         population = newPopulation;
@@ -363,13 +459,8 @@ Individual GeneticAlgorithm::runEvolution(int generations) {
         // Update overall best
         if (gen == 0 || currentBest.fitnessScore > bestOverall.fitnessScore) {
             bestOverall = currentBest;
-            // cout << "Generation " << (gen + 1) << "/" << generations
-            //      << " - New Best Fitness: " << bestOverall.fitnessScore << endl;
-        } else {
-            // cout << "Generation " << (gen + 1) << "/" << generations
-            //      << " - Best Fitness: " << currentBest.fitnessScore
-            //      << " (Overall Best: " << bestOverall.fitnessScore << ")"
-            //      << endl;
+            cout << "Generation " << (gen + 1) << "/" << generations
+                 << " - New Best Fitness: " << bestOverall.fitnessScore << endl;
         }
 
         selectNextGeneration();

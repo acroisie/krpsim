@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "Individual.hpp"
 #include "Simulator.hpp"
+#include <map>
 #include <random>
 #include <string>
 #include <vector>
@@ -17,6 +18,7 @@ class GeneticAlgorithm {
     Individual getBestIndividual() const;
 
   private:
+    const Config &config;
     Simulator &simulator;
     int populationSize;
     double mutationRate;
@@ -33,9 +35,19 @@ class GeneticAlgorithm {
     void evaluatePopulation();
     void selectNextGeneration();
 
+    Individual createRandomIndividual();
+    Individual createSmartIndividual();
+
+    // Helper method to check if a process can be executed with given stocks
+    bool canExecuteProcess(const Process *process,
+                           const std::map<std::string, int> &stocks) const;
+
+    // Helper method to update stocks after process execution
+    void updateStocksAfterProcess(const Process *process,
+                                  std::map<std::string, int> &stocks) const;
+
     std::vector<size_t> selectParents();
     std::pair<Individual, Individual> crossover(const Individual &parent1,
                                                 const Individual &parent2);
     Individual mutate(const Individual &individual);
-    Individual createRandomIndividual();
 };
