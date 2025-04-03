@@ -1,5 +1,7 @@
 #include "Simulator.hpp"
 #include <algorithm>
+#include <iostream>
+#include <set>
 
 using namespace std;
 
@@ -57,6 +59,24 @@ Simulator::runSimulation(const vector<string> &processSequence) {
     // Keep track of resources that are currently in use by running processes
     map<string, int> resourcesInUse;
 
+    // Map to track which process uses which resources (for better tracking)
+    map<string, set<string>> processResourceMap;
+    
+    // Pre-compute which resources are reusable (same resource is both input and output)
+    map<string, set<string>> reusableResources;
+    for (const auto& process : config.getProcesses()) {
+        set<string> reusable;
+        for (const auto& [resource, quantity] : process.inputs) {
+            auto outputIt = process.outputs.find(resource);
+            if (outputIt != process.outputs.end() && outputIt->second >= quantity) {
+                reusable.insert(resource);
+            }
+        }
+        if (!reusable.empty()) {
+            reusableResources[process.name] = reusable;
+        }
+    }
+
     // Main simulation loop
     while (currentTime <= timeLimit) {
         bool stocksUpdated = false;
@@ -75,18 +95,21 @@ Simulator::runSimulation(const vector<string> &processSequence) {
                 }
                 
                 // Release resources that were being used by this process
-                for (const auto &[resource, quantity] : finishedProcess.processPtr->inputs) {
-                    auto outputIt = finishedProcess.processPtr->outputs.find(resource);
-                    if (outputIt != finishedProcess.processPtr->outputs.end() && outputIt->second == quantity) {
-                        // This is a reusable resource (like the pan)
-                        resourcesInUse[resource] -= quantity;
-                        if (resourcesInUse[resource] <= 0) {
-                            resourcesInUse.erase(resource);
+                const string& processName = finishedProcess.processPtr->name;
+                if (reusableResources.find(processName) != reusableResources.end()) {
+                    for (const auto& resource : reusableResources[processName]) {
+                        auto inputIt = finishedProcess.processPtr->inputs.find(resource);
+                        if (inputIt != finishedProcess.processPtr->inputs.end()) {
+                            resourcesInUse[resource] -= inputIt->second;
+                            if (resourcesInUse[resource] <= 0) {
+                                resourcesInUse.erase(resource);
+                            }
                         }
                     }
                 }
                 
                 stocksUpdated = true;
+                processesExecuted++;
             }
         }
 
@@ -96,101 +119,119 @@ Simulator::runSimulation(const vector<string> &processSequence) {
         }
 
         bool processStarted = false;
-        if (currentTime < timeLimit) {
-            bool tryMore = true;
-            while (tryMore) {
-                tryMore = false;
-                const Process *processToRun = nullptr;
-                string processName;
-                bool attemptedFromSequence = false;
+        
+        // Try to start processes in a loop to allow multiple processes to start in the same cycle
+        bool tryMoreProcesses = true;
+        while (tryMoreProcesses && currentTime < timeLimit) {
+            tryMoreProcesses = false;
+            const Process *processToRun = nullptr;
+            string processName;
+            bool attemptedFromSequence = false;
 
-                // Try to get a process from the sequence or opportunistically
-                if (!opportunisticMode &&
-                    sequenceIndex < processSequence.size()) {
-                    processName = processSequence[sequenceIndex];
-                    processToRun = getProcessByName(processName);
-                    attemptedFromSequence = true;
-                } else {
-                    opportunisticMode = true;
-                    for (const auto &[name, process] : processMap) {
-                        if (canStartProcess(process, result.finalStocks)) {
-                            processToRun = process;
-                            processName = name;
+            // Try to get a process from the sequence or opportunistically
+            if (!opportunisticMode && sequenceIndex < processSequence.size()) {
+                processName = processSequence[sequenceIndex];
+                processToRun = getProcessByName(processName);
+                attemptedFromSequence = true;
+            } else {
+                opportunisticMode = true;
+                // Try all processes in order of config (deterministic)
+                for (const auto &process : config.getProcesses()) {
+                    if (canStartProcess(&process, result.finalStocks)) {
+                        bool canUseResources = true;
+                        // Check if reusable resources are available
+                        if (reusableResources.find(process.name) != reusableResources.end()) {
+                            for (const auto& resource : reusableResources[process.name]) {
+                                auto inputIt = process.inputs.find(resource);
+                                if (inputIt != process.inputs.end()) {
+                                    auto inUseIt = resourcesInUse.find(resource);
+                                    int inUseQty = (inUseIt != resourcesInUse.end()) ? inUseIt->second : 0;
+                                    int availableQty = result.finalStocks[resource] - inUseQty;
+                                    if (availableQty < inputIt->second) {
+                                        canUseResources = false;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (canUseResources) {
+                            processToRun = &process;
+                            processName = process.name;
                             break;
                         }
                     }
                 }
+            }
 
-                if (processToRun) {
-                    // Check if resources are available and not in use
-                    bool canStart = canStartProcess(processToRun, result.finalStocks);
-                    
-                    // Check if any reusable resources are already in use
-                    if (canStart) {
-                        for (const auto &[resource, quantity] : processToRun->inputs) {
-                            auto outputIt = processToRun->outputs.find(resource);
-                            if (outputIt != processToRun->outputs.end() && outputIt->second == quantity) {
-                                // This is a reusable resource (like the pan)
-                                auto inUseIt = resourcesInUse.find(resource);
-                                if (inUseIt != resourcesInUse.end() && inUseIt->second > 0) {
-                                    // This resource is already in use
-                                    canStart = false;
-                                    break;
-                                }
+            if (processToRun) {
+                // Check if resources are available and not in use
+                bool canStart = canStartProcess(processToRun, result.finalStocks);
+                
+                // Check if any reusable resources are already in use
+                if (canStart && reusableResources.find(processName) != reusableResources.end()) {
+                    for (const auto& resource : reusableResources[processName]) {
+                        auto inputIt = processToRun->inputs.find(resource);
+                        if (inputIt != processToRun->inputs.end()) {
+                            auto inUseIt = resourcesInUse.find(resource);
+                            int inUseQty = (inUseIt != resourcesInUse.end()) ? inUseIt->second : 0;
+                            int availableQty = result.finalStocks[resource] - inUseQty;
+                            if (availableQty < inputIt->second) {
+                                canStart = false;
+                                break;
                             }
                         }
                     }
-                    
-                    if (canStart && (currentTime + processToRun->nbCycle <= timeLimit)) {
-                        // Consume inputs
-                        for (const auto &[resource, quantity] : processToRun->inputs) {
-                            result.finalStocks[resource] -= quantity;
-                            
-                            // Mark reusable resources as in use
-                            auto outputIt = processToRun->outputs.find(resource);
-                            if (outputIt != processToRun->outputs.end() && outputIt->second == quantity) {
-                                resourcesInUse[resource] += quantity;
-                            }
-                        }
-
-                        // Add to running processes queue
-                        runningProcesses.push(
-                            {processToRun,
-                             currentTime + processToRun->nbCycle});
-                        result.executionLog.push_back(
-                            {currentTime, processName});
-                        processesExecuted++;
-                        processStarted = true;
-                        tryMore = true;
-
-                        // Move to next process in sequence only if successful
-                        if (attemptedFromSequence) {
-                            sequenceIndex++;
-                        }
-                    } else {
-                        // We couldn't start the process, only move to next if
-                        // opportunistic
-                        if (!attemptedFromSequence) {
-                            tryMore = false;
-                        } else {
-                            // In sequence mode, move to next process if this one can't start
-                            sequenceIndex++;
-                            tryMore = (sequenceIndex < processSequence.size());
+                }
+                
+                if (canStart && (currentTime + processToRun->nbCycle <= timeLimit)) {
+                    // Consume inputs
+                    for (const auto &[resource, quantity] : processToRun->inputs) {
+                        result.finalStocks[resource] -= quantity;
+                        
+                        // Mark reusable resources as in use
+                        if (reusableResources.find(processName) != reusableResources.end() &&
+                            reusableResources[processName].find(resource) != reusableResources[processName].end()) {
+                            resourcesInUse[resource] += quantity;
                         }
                     }
-                } else {
-                    // Invalid process name, skip it
+
+                    // Add to running processes queue
+                    runningProcesses.push(
+                        {processToRun,
+                         currentTime + processToRun->nbCycle});
+                    result.executionLog.push_back(
+                        {currentTime, processName});
+                    processStarted = true;
+                    tryMoreProcesses = true;  // Try to start more processes in this cycle
+
+                    // Move to next process in sequence only if successful
                     if (attemptedFromSequence) {
                         sequenceIndex++;
-                        tryMore = (sequenceIndex < processSequence.size());
                     }
+                } else {
+                    // We couldn't start the process, only move to next if
+                    // from sequence
+                    if (!attemptedFromSequence) {
+                        tryMoreProcesses = false;  // Stop trying opportunistic processes
+                    } else {
+                        // In sequence mode, move to next process if this one can't start
+                        sequenceIndex++;
+                        tryMoreProcesses = (sequenceIndex < processSequence.size());
+                    }
+                }
+            } else {
+                // Invalid process name, skip it
+                if (attemptedFromSequence) {
+                    sequenceIndex++;
+                    tryMoreProcesses = (sequenceIndex < processSequence.size());
+                }
 
-                    // Switch to opportunistic mode if sequence is exhausted
-                    if (!opportunisticMode &&
-                        sequenceIndex >= processSequence.size()) {
-                        opportunisticMode = true;
-                        tryMore = true;
-                    }
+                // Switch to opportunistic mode if sequence is exhausted
+                if (!opportunisticMode &&
+                    sequenceIndex >= processSequence.size()) {
+                    opportunisticMode = true;
+                    tryMoreProcesses = true;  // Try opportunistic mode
                 }
             }
         }
@@ -198,18 +239,15 @@ Simulator::runSimulation(const vector<string> &processSequence) {
         // Advance time if no process was started and no stocks were updated
         if (!processStarted && !stocksUpdated) {
             if (runningProcesses.empty()) {
-                break;
+                break;  // No more processes can run
             } else {
+                // Jump to next process completion time
                 int nextCompletionTime = runningProcesses.top().completionTime;
-                if (nextCompletionTime > timeLimit) {
-                    currentTime = timeLimit;
-                    result.timeoutReached = true;
-                } else {
-                    // Make sure time advances at least by 1 to avoid infinite
-                    // loops
-                    currentTime = max(currentTime + 1, nextCompletionTime);
-                }
+                currentTime = min(nextCompletionTime, timeLimit);
             }
+        } else {
+            // Process started or stocks updated, move to next cycle
+            currentTime++;
         }
 
         if (currentTime > timeLimit) {
@@ -271,12 +309,15 @@ Simulator::runSimulation(const vector<string> &processSequence) {
     }
 
     // Small bonus for more processes executed (tie-breaker)
-    result.fitness += processesExecuted * 1e-9;
+    result.fitness += processesExecuted;
 
     // Penalty if we're not optimizing time and we ran out of processes to run
     if (!optimizeTime && currentTime <= timeLimit && runningProcesses.empty() &&
         opportunisticMode) {
-        result.fitness *= 0.5;
+        // Less severe penalty
+        if (result.fitness > 0) {
+            result.fitness *= 0.9;
+        }
     }
 
     return result;

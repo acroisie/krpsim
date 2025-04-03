@@ -7,7 +7,7 @@ using namespace std;
 
 ProcessManager::ProcessManager(const Config &config, int timeLimit)
     : config(config), simulator(config, timeLimit),
-      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 2, 50, 150),
+      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 4, 50, 200),
       timeLimit(timeLimit) {}
 
 void ProcessManager::run() {
@@ -17,7 +17,20 @@ void ProcessManager::run() {
 
     cout << "Evaluating using Genetic Algorithm..." << endl;
 
-    int generations = 100;
+    // Adjust generations based on problem complexity
+    int baseGenerations = 100;
+    int processCount = config.getProcesses().size();
+    int stockCount = config.getStocks().size();
+    
+    // More complex problems get more generations
+    int generations = baseGenerations;
+    if (processCount > 10 || stockCount > 5) {
+        generations = 150;
+    }
+    if (processCount > 15 || stockCount > 10) {
+        generations = 200;
+    }
+    
     Individual bestSolution = geneticAlgorithm.runEvolution(generations);
 
     cout << "Optimization complete." << endl;
