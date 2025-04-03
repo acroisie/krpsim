@@ -363,13 +363,13 @@ Individual GeneticAlgorithm::runEvolution(int generations) {
         // Update overall best
         if (gen == 0 || currentBest.fitnessScore > bestOverall.fitnessScore) {
             bestOverall = currentBest;
-            cout << "Generation " << (gen + 1) << "/" << generations
-                 << " - New Best Fitness: " << bestOverall.fitnessScore << endl;
+            // cout << "Generation " << (gen + 1) << "/" << generations
+            //      << " - New Best Fitness: " << bestOverall.fitnessScore << endl;
         } else {
-            cout << "Generation " << (gen + 1) << "/" << generations
-                 << " - Best Fitness: " << currentBest.fitnessScore
-                 << " (Overall Best: " << bestOverall.fitnessScore << ")"
-                 << endl;
+            // cout << "Generation " << (gen + 1) << "/" << generations
+            //      << " - Best Fitness: " << currentBest.fitnessScore
+            //      << " (Overall Best: " << bestOverall.fitnessScore << ")"
+            //      << endl;
         }
 
         selectNextGeneration();
