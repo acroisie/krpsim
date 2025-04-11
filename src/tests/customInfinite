@@ -1,0 +1,14 @@
+#
+# Perso infini - krpsim
+#
+# stock      name:quantity
+grain:1
+#
+# process   name:(need1:qty1;need2:qty2;[...]):(result1:qty1;result2:qty2;[...]):delay
+#
+planter:(grain:1):(grain:2):3
+#
+# optimize:(grain)
+#
+optimize:(grain)
+#
