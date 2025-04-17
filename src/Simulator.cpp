@@ -6,7 +6,8 @@
 
 using namespace std;
 
-Simulator::Simulator(const Config &cfg, int limit) : config(cfg), timeLimit(limit) {
+Simulator::Simulator(const Config &cfg, int limit)
+    : config(cfg), timeLimit(limit) {
     for (const auto &p : config.getProcesses()) {
         processMap[p.name] = &p;
     }
@@ -14,7 +15,8 @@ Simulator::Simulator(const Config &cfg, int limit) : config(cfg), timeLimit(limi
 }
 
 void Simulator::buildProcessPriority() {
-    set<string> goalSet(config.getOptimizeGoal().begin(), config.getOptimizeGoal().end());
+    set<string> goalSet(config.getOptimizeGoal().begin(),
+                        config.getOptimizeGoal().end());
 
     for (const auto &p : config.getProcesses()) {
         for (const auto &[res, _] : p.outputs) {
@@ -30,7 +32,8 @@ void Simulator::buildProcessPriority() {
             bool useful = false;
             for (const auto &[outRes, _] : p.outputs) {
                 for (const auto &q : config.getProcesses()) {
-                    if (processPriority.count(q.name) && processPriority[q.name] == depth - 1 &&
+                    if (processPriority.count(q.name) &&
+                        processPriority[q.name] == depth - 1 &&
                         q.inputs.count(outRes)) {
                         useful = true;
                         break;
@@ -48,7 +51,8 @@ const Process *Simulator::getProcessByName(const string &name) const {
     return it != processMap.end() ? it->second : nullptr;
 }
 
-bool Simulator::canStartProcess(const Process *proc, const map<string, int> &stocks) const {
+bool Simulator::canStartProcess(const Process *proc,
+                                const map<string, int> &stocks) const {
     if (!proc) return false;
     for (const auto &[res, qty] : proc->inputs) {
         auto it = stocks.find(res);
@@ -57,26 +61,30 @@ bool Simulator::canStartProcess(const Process *proc, const map<string, int> &sto
     return true;
 }
 
-Simulator::SimulationResult Simulator::runSimulation(const vector<string> &sequence) {
+Simulator::SimulationResult
+Simulator::runSimulation(const vector<string> &sequence) {
     SimulationResult result;
     unordered_map<string, int> initialStocks;
     for (const auto &s : config.getStocks()) {
         result.finalStocks[s.name] = s.quantity;
-        initialStocks[s.name]     = s.quantity;
+        initialStocks[s.name] = s.quantity;
     }
 
-    size_t seqIdx           = 0;
-    bool   opportunist      = false;
-    int    currentTime      = 0;
-    int    processesExecuted = 0;
+    size_t seqIdx = 0;
+    bool opportunist = false;
+    int currentTime = 0;
+    int processesExecuted = 0;
 
-    priority_queue<RunningProcess, vector<RunningProcess>, greater<RunningProcess>> runningQ;
+    priority_queue<RunningProcess, vector<RunningProcess>,
+                   greater<RunningProcess>>
+        runningQ;
 
     while (currentTime <= timeLimit) {
-        bool stocksUpdated  = false;
+        bool stocksUpdated = false;
         bool startedProcess = false;
 
-        while (!runningQ.empty() && runningQ.top().completionTime <= currentTime) {
+        while (!runningQ.empty() &&
+               runningQ.top().completionTime <= currentTime) {
             RunningProcess done = runningQ.top();
             runningQ.pop();
             if (done.processPtr) {
@@ -101,22 +109,27 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
 
             if (!opportunist && seqIdx < sequence.size()) {
                 chosenName = sequence[seqIdx];
-                chosen     = getProcessByName(chosenName);
-                fromSeq    = true;
+                chosen = getProcessByName(chosenName);
+                fromSeq = true;
             } else {
                 opportunist = true;
                 vector<const Process *> cand;
                 cand.reserve(config.getProcesses().size());
                 for (const auto &p : config.getProcesses()) cand.push_back(&p);
-                sort(cand.begin(), cand.end(), [&](const Process *a, const Process *b) {
-                    int pa = processPriority.count(a->name) ? processPriority[a->name] : 3;
-                    int pb = processPriority.count(b->name) ? processPriority[b->name] : 3;
-                    if (pa != pb) return pa < pb;
-                    return a->nbCycle < b->nbCycle;
-                });
+                sort(cand.begin(), cand.end(),
+                     [&](const Process *a, const Process *b) {
+                         int pa = processPriority.count(a->name)
+                                      ? processPriority[a->name]
+                                      : 3;
+                         int pb = processPriority.count(b->name)
+                                      ? processPriority[b->name]
+                                      : 3;
+                         if (pa != pb) return pa < pb;
+                         return a->nbCycle < b->nbCycle;
+                     });
                 for (const Process *p : cand) {
                     if (canStartProcess(p, result.finalStocks)) {
-                        chosen     = p;
+                        chosen = p;
                         chosenName = p->name;
                         break;
                     }
@@ -139,7 +152,7 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
             runningQ.push({chosen, currentTime + chosen->nbCycle});
             result.executionLog.emplace_back(currentTime, chosenName);
             startedProcess = true;
-            tryMore        = true;
+            tryMore = true;
             if (fromSeq) ++seqIdx;
         }
 
@@ -155,7 +168,8 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
         const Process *p = runningQ.top().processPtr;
         runningQ.pop();
         if (p) {
-            for (const auto &[res, qty] : p->outputs) result.finalStocks[res] += qty;
+            for (const auto &[res, qty] : p->outputs)
+                result.finalStocks[res] += qty;
         }
     }
 

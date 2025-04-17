@@ -1,8 +1,8 @@
 #include "ProcessManager.hpp"
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <set>
-#include <fstream>
 
 using namespace std;
 
@@ -29,7 +29,7 @@ void ProcessManager::run() {
     if (processCount > 15 || stockCount > 10) {
         generations = 200;
     }
-    
+
     Individual bestSolution = geneticAlgorithm.runEvolution(generations);
 
     cout << "Optimization complete." << endl;
@@ -53,7 +53,7 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
         }
     }
 
-    const char* tracefile_env = std::getenv("KRPSIM_TRACEFILE");
+    const char *tracefile_env = std::getenv("KRPSIM_TRACEFILE");
     std::string tracefile = tracefile_env ? tracefile_env : "tracefile.txt";
     std::ofstream trace(tracefile);
     if (trace.is_open()) {
@@ -63,7 +63,8 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
         trace.close();
         cout << "(Tracefile generated: " << tracefile << ")" << endl;
     } else {
-        cerr << "Warning: Could not write tracefile '" << tracefile << "'" << endl;
+        cerr << "Warning: Could not write tracefile '" << tracefile << "'"
+             << endl;
     }
 
     cout << "----------------------------------------" << endl;
