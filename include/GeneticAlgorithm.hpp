@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+using Stocks = std::map<std::string, int>;
+
 class GeneticAlgorithm {
   public:
     GeneticAlgorithm(const Config &config, Simulator &simulator,
@@ -38,11 +40,11 @@ class GeneticAlgorithm {
     Individual createRandomIndividual();
     Individual createSmartIndividual();
 
-    bool canExecuteProcess(const Process *process,
-                           const std::map<std::string, int> &stocks) const;
+    // Check if a process can be started with the available stocks
+    bool canStartProcess(const Process *process,
+                         const Stocks &availableStocks) const;
 
-    void updateStocksAfterProcess(const Process *process,
-                                  std::map<std::string, int> &stocks) const;
+    void updateStocksAfterProcess(const Process *process, Stocks &stocks) const;
 
     std::vector<size_t> selectParents();
     std::pair<Individual, Individual> crossover(const Individual &parent1,
