@@ -1,7 +1,9 @@
 #include "GeneticAlgorithm.hpp"
 #include <algorithm>
+#include <future>
 #include <iostream>
 #include <numeric>
+#include <thread>
 #include <unordered_map>
 using namespace std;
 
@@ -113,9 +115,25 @@ void GeneticAlgorithm::initializePopulation() {
 }
 
 void GeneticAlgorithm::evaluatePopulation() {
-    for (auto &individual : population)
-        individual.fitnessScore =
-            simulator.runSimulation(individual.processSequence).fitness;
+    // Parallel evaluation of the population
+    size_t numThreads = std::thread::hardware_concurrency();
+    if (numThreads == 0) numThreads = 4; // fallback
+    size_t popSize = population.size();
+    std::vector<std::future<void>> futures;
+    size_t chunk = (popSize + numThreads - 1) / numThreads;
+    for (size_t t = 0; t < numThreads; ++t) {
+        size_t start = t * chunk;
+        size_t end = std::min(start + chunk, popSize);
+        if (start >= end) break;
+        futures.push_back(std::async(std::launch::async, [this, start, end]() {
+            for (size_t i = start; i < end; ++i) {
+                population[i].fitnessScore =
+                    simulator.runSimulation(population[i].processSequence)
+                        .fitness;
+            }
+        }));
+    }
+    for (auto &f : futures) f.get();
 }
 
 vector<size_t> GeneticAlgorithm::selectParents() {
