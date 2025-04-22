@@ -62,10 +62,12 @@ Individual GeneticAlgorithm::createSmartIndividual() {
     for (const auto &process : config.getProcesses())
         processByName[process.name] = &process;
     std::vector<std::string> sequence;
+    sequence.reserve(maxSequenceLength); // optimisation
     int attempts = 0;
     while (sequence.size() < static_cast<size_t>(maxSequenceLength) &&
            attempts++ < maxSequenceLength * 2) {
         std::vector<const Process *> availableProcesses;
+        availableProcesses.reserve(processByName.size()); // optimisation
         for (const auto &[name, ptr] : processByName)
             if (canStartProcess(ptr, stocks)) availableProcesses.push_back(ptr);
         if (availableProcesses.empty()) break;
@@ -120,6 +122,7 @@ void GeneticAlgorithm::evaluatePopulation() {
     if (numThreads == 0) numThreads = 4; // fallback
     size_t popSize = population.size();
     std::vector<std::future<void>> futures;
+    futures.reserve(numThreads); // optimisation
     size_t chunk = (popSize + numThreads - 1) / numThreads;
     for (size_t t = 0; t < numThreads; ++t) {
         size_t start = t * chunk;
@@ -162,20 +165,24 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         normalizedFitness.push_back(normalized);
         total += normalized;
     }
+    // Calcul de la somme cumulative
+    vector<double> cumulative;
+    cumulative.reserve(normalizedFitness.size());
+    double sum = 0.0;
+    for (double val : normalizedFitness) {
+        sum += val;
+        cumulative.push_back(sum);
+    }
     vector<size_t> selectedIndices;
+    selectedIndices.reserve(populationSize);
     uniform_real_distribution<> dist(0.0, total);
     for (int i = 0; i < populationSize; ++i) {
-        double randomPoint = dist(randomGenerator), sum = 0.0;
-        for (size_t j = 0; j < population.size(); ++j) {
-            sum += normalizedFitness[j];
-            if (randomPoint <= sum) {
-                selectedIndices.push_back(j);
-                break;
-            }
-        }
-        if (selectedIndices.size() < static_cast<size_t>(i + 1) &&
-            !population.empty())
-            selectedIndices.push_back(population.size() - 1);
+        double randomPoint = dist(randomGenerator);
+        auto it =
+            std::lower_bound(cumulative.begin(), cumulative.end(), randomPoint);
+        size_t idx = std::distance(cumulative.begin(), it);
+        if (idx >= population.size()) idx = population.size() - 1;
+        selectedIndices.push_back(idx);
     }
     return selectedIndices;
 }
