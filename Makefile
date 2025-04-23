@@ -1,25 +1,37 @@
-NAME = krpsim
-CXX = g++
+CXX      = g++
 CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude -O3
 
-SRC_DIR = src
-INCLUDE_DIR = include
-OBJ_DIR = obj
+SRC_DIR  = src
+OBJ_DIR  = obj
 
-SRCS = $(SRC_DIR)/main.cpp \
-       $(SRC_DIR)/Config.cpp \
-       $(SRC_DIR)/Lexer.cpp \
-       $(SRC_DIR)/Parser.cpp \
-       $(SRC_DIR)/Simulator.cpp \
-       $(SRC_DIR)/GeneticAlgorithm.cpp \
-       $(SRC_DIR)/ProcessManager.cpp
+COMMON_SRCS = \
+	$(SRC_DIR)/Config.cpp \
+	$(SRC_DIR)/Lexer.cpp  \
+	$(SRC_DIR)/Parser.cpp \
+	$(SRC_DIR)/Simulator.cpp
 
-OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+KRPSIM_SRCS = \
+	$(SRC_DIR)/main.cpp \
+	$(SRC_DIR)/GeneticAlgorithm.cpp \
+	$(SRC_DIR)/ProcessManager.cpp
 
-all: $(NAME)
+KRPSIM_OBJS = $(COMMON_SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o) \
+	          $(KRPSIM_SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
-$(NAME): $(OBJS)
-	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
+VERIF_SRCS  = \
+	$(SRC_DIR)/TraceVerifier.cpp \
+	$(SRC_DIR)/krpsim_verif.cpp
+
+VERIF_OBJS  = $(COMMON_SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o) \
+	          $(VERIF_SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+
+all: krpsim krpsim_verif
+
+krpsim: $(KRPSIM_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+krpsim_verif: $(VERIF_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -31,7 +43,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f krpsim krpsim_verif
 
 re: fclean all
 
