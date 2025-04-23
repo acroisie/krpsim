@@ -118,8 +118,15 @@ bool TraceVerifier::verifyFile(const string &traceFile) {
     if (!runningQ.empty()) last = max(last, runningQ.top().completionTime);
     finishUntil(last);
 
+    finishUntil(timeLimit);
+
+    int finalCycle = last;
+    if (!runningQ.empty()) {
+        finalCycle = timeLimit;
+    }
+
     cout << "Trace vérifiée avec succès." << endl
          << "----------------------------------------" << endl;
-    printStocks(last);
+    printStocks(finalCycle);
     return true;
 }
