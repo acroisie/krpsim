@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <set>
+#include <fstream>
 
 using namespace std;
 
@@ -55,6 +56,21 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
             cout << cycle << ":" << processName << endl;
         }
     }
+
+    // --- Génération du fichier de trace pour krpsim_verif ---
+    const char* tracefile_env = std::getenv("KRPSIM_TRACEFILE");
+    std::string tracefile = tracefile_env ? tracefile_env : "tracefile.txt";
+    std::ofstream trace(tracefile);
+    if (trace.is_open()) {
+        for (const auto &[cycle, processName] : result.executionLog) {
+            trace << cycle << ":" << processName << "\n";
+        }
+        trace.close();
+        cout << "(Tracefile generated: " << tracefile << ")" << endl;
+    } else {
+        cerr << "Warning: Could not write tracefile '" << tracefile << "'" << endl;
+    }
+    // --------------------------------------------------------
 
     cout << "----------------------------------------" << endl;
 
