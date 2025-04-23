@@ -6,18 +6,13 @@
 
 using namespace std;
 
-GeneticAlgorithm::GeneticAlgorithm(const Config &config, Simulator &simulator,
-                                   int populationSize, double mutationRate,
-                                   double crossoverRate, int eliteCount,
-                                   int minSequenceLength, int maxSequenceLength)
-    : config(config), simulator(simulator), populationSize(populationSize),
-      mutationRate(mutationRate), crossoverRate(crossoverRate),
-      eliteCount(min(max(0, eliteCount), populationSize)),
-      minSequenceLength(minSequenceLength),
-      maxSequenceLength(maxSequenceLength), randomGenerator(random_device{}()) {
-    for (const auto &proc : config.getProcesses()) {
-        processNames.push_back(proc.name);
-    }
+GeneticAlgorithm::GeneticAlgorithm(const Config &cfg, Simulator &sim, int popSize,
+                                   double mutRate, double crossRate, int elite,
+                                   int minLen, int maxLen)
+    : config(cfg), simulator(sim), populationSize(popSize), mutationRate(mutRate),
+      crossoverRate(crossRate), eliteCount(min(max(0, elite), popSize)),
+      minSequenceLength(minLen), maxSequenceLength(maxLen), randomGenerator(random_device{}()) {
+    for (const auto &p : config.getProcesses()) processNames.push_back(p.name);
 }
 
 bool GeneticAlgorithm::canExecuteProcess(
@@ -53,64 +48,43 @@ void GeneticAlgorithm::updateStocksAfterProcess(
 }
 
 Individual GeneticAlgorithm::createSmartIndividual() {
-    // Initialize stocks from config
-    map<string, int> currentStocks;
-    for (const auto &stock : config.getStocks()) {
-        currentStocks[stock.name] = stock.quantity;
-    }
+    // Stock courant
+    map<string, int> stocks;
+    for (const auto &s : config.getStocks()) stocks[s.name] = s.quantity;
 
-    // Create a mapping of process names to process pointers for quick lookup
-    unordered_map<string, const Process *> processMap;
-    for (const auto &process : config.getProcesses()) {
-        processMap[process.name] = &process;
-    }
+    // map rapide nom ➜ Process
+    unordered_map<string, const Process *> pMap;
+    for (const auto &p : config.getProcesses()) pMap[p.name] = &p;
 
-    // Create sequence
-    vector<string> sequence;
-    int sequenceLength = 0;
-    int maxAttempts =
-        maxSequenceLength * 2; // To avoid potential infinite loops
+    vector<string> seq;
     int attempts = 0;
+    while (seq.size() <(static_cast<size_t>(maxSequenceLength)) && attempts < maxSequenceLength * 2) {
+        ++attempts;
+        vector<const Process *> executable;
+        for (const auto &[name, ptr] : pMap)
+            if (canExecuteProcess(ptr, stocks)) executable.push_back(ptr);
 
-    while (sequenceLength < maxSequenceLength && attempts < maxAttempts) {
-        attempts++;
+        if (executable.empty()) break;
 
-        // Find executable processes
-        vector<const Process *> executableProcesses;
-        for (const auto &[name, proc] : processMap) {
-            if (canExecuteProcess(proc, currentStocks)) {
-                executableProcesses.push_back(proc);
-            }
-        }
-
-        if (executableProcesses.empty()) {
-            // No executable processes found, break the loop
-            break;
-        }
-
-        // Select a random executable process with preference for processes
-        // leading to optimization goals
-        uniform_int_distribution<size_t> dist(0,
-                                              executableProcesses.size() - 1);
-        const Process *selectedProcess =
-            executableProcesses[dist(randomGenerator)];
-        sequence.push_back(selectedProcess->name);
-        sequenceLength++;
-
-        // Update stocks
-        updateStocksAfterProcess(selectedProcess, currentStocks);
+        // choisir le meilleur selon priorité puis nbCycle
+        auto best = *min_element(executable.begin(), executable.end(), [&](const Process *a, const Process *b) {
+            const auto &prio = simulator.getProcessPriority();
+            int pa = prio.count(a->name) ? prio.at(a->name) : 3;
+            int pb = prio.count(b->name) ? prio.at(b->name) : 3;
+            if (pa != pb) return pa < pb;
+            return a->nbCycle < b->nbCycle;
+        });
+        seq.push_back(best->name);
+        updateStocksAfterProcess(best, stocks);
     }
 
-    // If sequence is too short, pad it with random processes
-    // This helps maintain genetic diversity
-    if (sequence.size() < static_cast<size_t>(minSequenceLength)) {
-        uniform_int_distribution<size_t> procDist(0, processNames.size() - 1);
-        while (sequence.size() < static_cast<size_t>(minSequenceLength)) {
-            sequence.push_back(processNames[procDist(randomGenerator)]);
-        }
+    // si trop court — on duplique des choix utiles plutôt qu'aléatoires
+    if (seq.size() < static_cast<size_t>(minSequenceLength) && !seq.empty()) {
+        std::mt19937 &rng = randomGenerator;
+        while (seq.size() < static_cast<size_t>(minSequenceLength)) seq.push_back(seq[rng() % seq.size()]);
     }
 
-    return Individual(sequence);
+    return Individual(seq);
 }
 
 Individual GeneticAlgorithm::createRandomIndividual() {
