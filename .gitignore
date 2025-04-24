@@ -1,3 +1,5 @@
 .vscode
 *.o
 krpsim
+krpsim_verif
+tracefile.txt
