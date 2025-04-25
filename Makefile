@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude -O3
+CXXFLAGS = -Wall -Wextra -std=c++20 -Iinclude -O3 -march=native -flto -funroll-loops -DNDEBUG
 
 SRC_DIR  = src
 OBJ_DIR  = obj
@@ -43,7 +43,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 
 fclean: clean
-	rm -f krpsim krpsim_verif
+	rm -f krpsim krpsim_verif tracefile.txt
 
 re: fclean all
 

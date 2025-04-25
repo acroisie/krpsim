@@ -33,9 +33,18 @@ void TraceVerifier::finishUntil(int cycle) {
 }
 
 bool TraceVerifier::start(int cycle, const Process *p, string &err) {
-    if (!p)         { err = "process inconnu";      return false; }
-    if (cycle > timeLimit) { err = "dépasse la limite de temps"; return false; }
-    if (!canStart(p)){ err = "stock insuffisant";   return false; }
+    if (!p) {
+        err = "process inconnu";
+        return false;
+    }
+    if (cycle > timeLimit) {
+        err = "dépasse la limite de temps";
+        return false;
+    }
+    if (!canStart(p)) {
+        err = "stock insuffisant";
+        return false;
+    }
 
     for (const auto &[r, q] : p->inputs) stocks[r] -= q;
     runningQ.push({p, cycle + p->nbCycle});
@@ -47,19 +56,22 @@ void TraceVerifier::printStocks(int finalCycle) const {
     set<string> names;
     for (const auto &s : config.getStocks()) names.insert(s.name);
     for (const auto &p : config.getProcesses()) {
-        for (const auto &[r, _] : p.inputs)  names.insert(r);
+        for (const auto &[r, _] : p.inputs) names.insert(r);
         for (const auto &[r, _] : p.outputs) names.insert(r);
     }
     for (const string &n : names)
-        cout << "  " << n << " => "
-             << (stocks.count(n) ? stocks.at(n) : 0) << endl;
+        cout << "  " << n << " => " << (stocks.count(n) ? stocks.at(n) : 0)
+             << endl;
     cout << "----------------------------------------" << endl;
     cout << "Dernier cycle : " << finalCycle << endl;
 }
 
 bool TraceVerifier::verifyFile(const string &traceFile) {
     ifstream file(traceFile);
-    if (!file) { cerr << "Erreur : impossible d’ouvrir " << traceFile << endl; return false; }
+    if (!file) {
+        cerr << "Erreur : impossible d’ouvrir " << traceFile << endl;
+        return false;
+    }
 
     string line;
     int prev = 0, last = 0;
@@ -72,20 +84,25 @@ bool TraceVerifier::verifyFile(const string &traceFile) {
 
         size_t col = line.find(':');
         if (col == string::npos) {
-            cerr << "Syntaxe invalide ligne " << nline << endl; return false;
+            cerr << "Syntaxe invalide ligne " << nline << endl;
+            return false;
         }
 
         int cycle = stoi(line.substr(0, col));
         string name = StringUtils::trim(line.substr(col + 1));
         if (cycle < prev) {
-            cerr << "Cycles non croissants ligne " << nline << endl; return false;
+            cerr << "Cycles non croissants ligne " << nline << endl;
+            return false;
         }
 
         finishUntil(cycle);
 
         const Process *p = nullptr;
         for (const auto &pr : config.getProcesses())
-            if (pr.name == name) { p = &pr; break; }
+            if (pr.name == name) {
+                p = &pr;
+                break;
+            }
 
         string err;
         if (!start(cycle, p, err)) {
@@ -101,8 +118,15 @@ bool TraceVerifier::verifyFile(const string &traceFile) {
     if (!runningQ.empty()) last = max(last, runningQ.top().completionTime);
     finishUntil(last);
 
+    finishUntil(timeLimit);
+
+    int finalCycle = last;
+    if (!runningQ.empty()) {
+        finalCycle = timeLimit;
+    }
+
     cout << "Trace vérifiée avec succès." << endl
          << "----------------------------------------" << endl;
-    printStocks(last);
+    printStocks(finalCycle);
     return true;
 }

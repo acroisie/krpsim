@@ -1,22 +1,14 @@
 #pragma once
 #include "Config.hpp"
 #include "Process.hpp"
-#include <queue>
 #include <map>
+#include <queue>
 #include <set>
 #include <string>
 
-/**
- *  TraceVerifier
- *  -------------
- *  Vérifie qu’un fichier-trace “<cycle>:<process>” est cohérent avec la
- *  configuration krpsim : disponibilité des stocks au démarrage, durées
- *  d’exécution, etc.  Affiche l’erreur précise ou le stock final.
- */
 class TraceVerifier {
   public:
     TraceVerifier(const Config &cfg, int timeLimit = 1'000'000);
-    /** Renvoie true si la trace est valide, false sinon (affiche les détails). */
     bool verifyFile(const std::string &traceFilename);
 
   private:
@@ -31,8 +23,7 @@ class TraceVerifier {
             return completionTime > o.completionTime;
         }
     };
-    std::priority_queue<RunningProcess,
-                        std::vector<RunningProcess>,
+    std::priority_queue<RunningProcess, std::vector<RunningProcess>,
                         std::greater<RunningProcess>>
         runningQ;
 
