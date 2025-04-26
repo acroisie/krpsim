@@ -15,7 +15,6 @@ Simulator::Simulator(const Config &cfg, int limit)
 }
 
 void Simulator::buildProcessPriority() {
-    // Build the process priority table: 0 = direct goal, 1/2 = indirect
     std::set<std::string> goalNames(config.getOptimizeGoal().begin(),
                                     config.getOptimizeGoal().end());
     for (const auto &process : config.getProcesses())
@@ -50,7 +49,6 @@ bool Simulator::canStartProcess(
     return true;
 }
 
-// Pick the best process among candidates (priority then duration)
 static const Process *
 pickBestProcess(const std::vector<const Process *> &candidates,
                 const ProcessPriority &priorityTable) {
@@ -80,7 +78,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
         runningProcesses;
     while (currentTime <= timeLimit) {
         bool stocksUpdated = false, startedProcess = false;
-        // Complete finished processes
+
         while (!runningProcesses.empty() &&
                runningProcesses.top().completionTime <= currentTime) {
             auto finished = runningProcesses.top();
@@ -96,7 +94,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
             result.timeoutReached = true;
             break;
         }
-        // Try to start as many processes as possible
+
         bool tryMore = true;
         while (tryMore) {
             tryMore = false;
@@ -145,7 +143,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
             ++currentTime;
         }
     }
-    // Finalize all processes that finish before the time limit
+
     while (!runningProcesses.empty() &&
            runningProcesses.top().completionTime <= timeLimit) {
         const Process *process = runningProcesses.top().processPtr;
@@ -154,7 +152,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
             for (const auto &[resource, quantity] : process->outputs)
                 result.finalStocks[resource] += quantity;
     }
-    // Compute the actual duration
+
     for (const auto &[start, name] : result.executionLog) {
         const Process *process = getProcessByName(name);
         if (process)
@@ -162,7 +160,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
                 std::max(result.finalCycle, start + process->nbCycle);
     }
     result.finalCycle = std::min(result.finalCycle, timeLimit);
-    // Compute the fitness score
+
     const auto &goals = config.getOptimizeGoal();
     bool optimizeTime =
         std::find(goals.begin(), goals.end(), "time") != goals.end();
@@ -171,7 +169,7 @@ Simulator::runSimulation(const std::vector<std::string> &processSequence) {
         if (goal != "time")
             result.fitness += result.finalStocks[goal] - initialStocks[goal];
     if (optimizeTime) result.fitness /= (1.0 + result.finalCycle);
-    // Tie-breaker: reward more executed processes
+
     result.fitness += executedProcessCount * (optimizeTime ? 1e-3 : 1e-2);
     if (result.fitness == 0.0 && executedProcessCount == 0)
         result.fitness = -1e9;

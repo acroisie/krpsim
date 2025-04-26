@@ -7,11 +7,9 @@
 #include <unordered_map>
 using namespace std;
 
-// Utility type for clarity
 using Stocks = std::map<std::string, int>;
 
 namespace {
-    // Random selection of indices in the population
     vector<size_t> randomSelection(size_t count, size_t populationSize,
                                    mt19937 &rng) {
         vector<size_t> indices;
@@ -32,7 +30,6 @@ GeneticAlgorithm::GeneticAlgorithm(const Config &cfg, Simulator &sim,
     for (const auto &p : config.getProcesses()) processNames.push_back(p.name);
 }
 
-// Check if a process can be started with the available stocks
 bool GeneticAlgorithm::canStartProcess(const Process *process,
                                        const Stocks &availableStocks) const {
     if (!process) return false;
@@ -43,7 +40,6 @@ bool GeneticAlgorithm::canStartProcess(const Process *process,
     return true;
 }
 
-// Update stocks after a process execution
 void GeneticAlgorithm::updateStocksAfterProcess(const Process *process,
                                                 Stocks &stocks) const {
     if (!process) return;
@@ -53,7 +49,6 @@ void GeneticAlgorithm::updateStocksAfterProcess(const Process *process,
         stocks[resource] += quantity;
 }
 
-// Create a smart individual by always picking the best process available
 Individual GeneticAlgorithm::createSmartIndividual() {
     Stocks stocks;
     for (const auto &stock : config.getStocks())
@@ -62,16 +57,16 @@ Individual GeneticAlgorithm::createSmartIndividual() {
     for (const auto &process : config.getProcesses())
         processByName[process.name] = &process;
     std::vector<std::string> sequence;
-    sequence.reserve(maxSequenceLength); // optimisation
+    sequence.reserve(maxSequenceLength);
     int attempts = 0;
     while (sequence.size() < static_cast<size_t>(maxSequenceLength) &&
            attempts++ < maxSequenceLength * 2) {
         std::vector<const Process *> availableProcesses;
-        availableProcesses.reserve(processByName.size()); // optimisation
+        availableProcesses.reserve(processByName.size());
         for (const auto &[name, ptr] : processByName)
             if (canStartProcess(ptr, stocks)) availableProcesses.push_back(ptr);
         if (availableProcesses.empty()) break;
-        // Pick the process with the highest priority and shortest duration
+
         auto best = *std::min_element(
             availableProcesses.begin(), availableProcesses.end(),
             [&](const Process *a, const Process *b) {
@@ -83,7 +78,6 @@ Individual GeneticAlgorithm::createSmartIndividual() {
         sequence.push_back(best->name);
         updateStocksAfterProcess(best, stocks);
     }
-    // If the sequence is too short, repeat useful choices
     if (sequence.size() < static_cast<size_t>(minSequenceLength) &&
         !sequence.empty()) {
         std::mt19937 &rng = randomGenerator;
@@ -117,12 +111,12 @@ void GeneticAlgorithm::initializePopulation() {
 }
 
 void GeneticAlgorithm::evaluatePopulation() {
-    // Parallel evaluation of the population
+
     size_t numThreads = std::thread::hardware_concurrency();
-    if (numThreads == 0) numThreads = 4; // fallback
+    if (numThreads == 0) numThreads = 4;
     size_t popSize = population.size();
     std::vector<std::future<void>> futures;
-    futures.reserve(numThreads); // optimisation
+    futures.reserve(numThreads);
     size_t chunk = (popSize + numThreads - 1) / numThreads;
     for (size_t t = 0; t < numThreads; ++t) {
         size_t start = t * chunk;
@@ -165,7 +159,7 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         normalizedFitness.push_back(normalized);
         total += normalized;
     }
-    // Calcul de la somme cumulative
+
     vector<double> cumulative;
     cumulative.reserve(normalizedFitness.size());
     double sum = 0.0;

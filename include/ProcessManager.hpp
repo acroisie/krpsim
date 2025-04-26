@@ -18,5 +18,7 @@ class ProcessManager {
     GeneticAlgorithm geneticAlgorithm;
     int timeLimit;
 
+    static int calculateMaxSequenceLength(const Config &config, int timeLimit);
+
     void generateOutput(const Individual &bestSolution);
 };

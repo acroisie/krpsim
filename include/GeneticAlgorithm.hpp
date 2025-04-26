@@ -40,12 +40,9 @@ class GeneticAlgorithm {
     Individual createRandomIndividual();
     Individual createSmartIndividual();
 
-    // Check if a process can be started with the available stocks
     bool canStartProcess(const Process *process,
                          const Stocks &availableStocks) const;
-
     void updateStocksAfterProcess(const Process *process, Stocks &stocks) const;
-
     std::vector<size_t> selectParents();
     std::pair<Individual, Individual> crossover(const Individual &parent1,
                                                 const Individual &parent2);

@@ -7,8 +7,38 @@ using namespace std;
 
 ProcessManager::ProcessManager(const Config &config, int timeLimit)
     : config(config), simulator(config, timeLimit),
-      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 4, 50, 200),
+      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 4, 50,
+                       calculateMaxSequenceLength(config, timeLimit)),
       timeLimit(timeLimit) {}
+
+int ProcessManager::calculateMaxSequenceLength(const Config &config,
+                                               int timeLimit) {
+    const auto &processes = config.getProcesses();
+    const auto &stocks = config.getStocks();
+
+    if (processes.empty()) {
+        return 100;
+    }
+
+    double avgCycle = 0.0;
+    for (const auto &process : processes) {
+        avgCycle += process.nbCycle;
+    }
+    avgCycle /= processes.size();
+
+    int estimatedProcesses =
+        static_cast<int>(timeLimit / std::max(1.0, avgCycle));
+
+    double complexityFactor =
+        2.0 + (stocks.size() * 0.1) + (processes.size() * 0.2);
+
+    int maxLength = static_cast<int>(estimatedProcesses * complexityFactor);
+
+    int minValue = std::max(100, estimatedProcesses);
+    int maxValue = std::min(20000, estimatedProcesses * 10);
+
+    return std::max(minValue, std::min(maxValue, maxLength));
+}
 
 void ProcessManager::run() {
     cout << "Nice file! " << config.getProcesses().size() << " processes, "
