@@ -38,11 +38,9 @@ class GeneticAlgorithm {
     Individual createRandomIndividual();
     Individual createSmartIndividual();
 
-    // Helper method to check if a process can be executed with given stocks
     bool canExecuteProcess(const Process *process,
                            const std::map<std::string, int> &stocks) const;
 
-    // Helper method to update stocks after process execution
     void updateStocksAfterProcess(const Process *process,
                                   std::map<std::string, int> &stocks) const;
 

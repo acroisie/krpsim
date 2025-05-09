@@ -14,7 +14,6 @@ Simulator::Simulator(const Config &cfg, int limit) : config(cfg), timeLimit(limi
 }
 
 void Simulator::buildProcessPriority() {
-    // 0 ➜ produit directement un objectif ; profondeur limitée à 2 suffisant ici.
     set<string> goalSet(config.getOptimizeGoal().begin(), config.getOptimizeGoal().end());
 
     for (const auto &p : config.getProcesses()) {
@@ -77,7 +76,6 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
         bool stocksUpdated  = false;
         bool startedProcess = false;
 
-        // Terminer les process achevés
         while (!runningQ.empty() && runningQ.top().completionTime <= currentTime) {
             RunningProcess done = runningQ.top();
             runningQ.pop();
@@ -94,7 +92,6 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
             break;
         }
 
-        // Démarrer de nouveaux process tant qu'on peut
         bool tryMore = true;
         while (tryMore) {
             tryMore = false;
@@ -154,7 +151,6 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
         }
     }
 
-    // Finaliser ce qui termine avant timeLimit
     while (!runningQ.empty() && runningQ.top().completionTime <= timeLimit) {
         const Process *p = runningQ.top().processPtr;
         runningQ.pop();
@@ -163,14 +159,12 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
         }
     }
 
-    // Durée réelle
     for (const auto &[start, name] : result.executionLog) {
         const Process *p = getProcessByName(name);
         if (p) result.finalCycle = max(result.finalCycle, start + p->nbCycle);
     }
     result.finalCycle = min(result.finalCycle, timeLimit);
 
-    // Fitness
     const auto &goals = config.getOptimizeGoal();
     bool optimiseTime = find(goals.begin(), goals.end(), "time") != goals.end();
 
@@ -182,7 +176,6 @@ Simulator::SimulationResult Simulator::runSimulation(const vector<string> &seque
     }
     if (optimiseTime) result.fitness /= (1.0 + result.finalCycle);
 
-    // léger tie‑breaker
     result.fitness += processesExecuted * (optimiseTime ? 1e-3 : 1e-2);
 
     if (result.fitness == 0.0 && processesExecuted == 0) result.fitness = -1e9;

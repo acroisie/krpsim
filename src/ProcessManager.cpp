@@ -18,12 +18,10 @@ void ProcessManager::run() {
 
     cout << "Evaluating using Genetic Algorithm..." << endl;
 
-    // Adjust generations based on problem complexity
     int baseGenerations = 100;
     int processCount = config.getProcesses().size();
     int stockCount = config.getStocks().size();
-    
-    // More complex problems get more generations
+
     int generations = baseGenerations;
     if (processCount > 10 || stockCount > 5) {
         generations = 150;
@@ -42,13 +40,11 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
     cout << "----------------------------------------" << endl;
     cout << "Best solution found:" << endl;
 
-    // Run the simulation once to get complete results
     Simulator::SimulationResult result =
         simulator.runSimulation(bestSolution.processSequence);
 
     cout << "Final Fitness Score: " << result.fitness << endl;
 
-    // Display execution log
     if (result.executionLog.empty()) {
         cout << "(No processes executed)" << endl;
     } else {
@@ -57,7 +53,6 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
         }
     }
 
-    // --- Génération du fichier de trace pour krpsim_verif ---
     const char* tracefile_env = std::getenv("KRPSIM_TRACEFILE");
     std::string tracefile = tracefile_env ? tracefile_env : "tracefile.txt";
     std::ofstream trace(tracefile);
@@ -70,11 +65,9 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
     } else {
         cerr << "Warning: Could not write tracefile '" << tracefile << "'" << endl;
     }
-    // --------------------------------------------------------
 
     cout << "----------------------------------------" << endl;
 
-    // Display completion message
     if (result.executionLog.empty()) {
         cout << "No process could be executed within the time limit ("
              << timeLimit << ")." << endl;
@@ -85,18 +78,14 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
              << endl;
     }
 
-    // Display final stock levels
     cout << "Stock:" << endl;
 
-    // Collect all stock names that should be displayed
     set<string> relevantStocks;
 
-    // Add initial stocks
     for (const auto &stock : config.getStocks()) {
         relevantStocks.insert(stock.name);
     }
 
-    // Add stocks mentioned in processes
     for (const auto &process : config.getProcesses()) {
         for (const auto &[resource, _] : process.inputs) {
             relevantStocks.insert(resource);
@@ -106,7 +95,6 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
         }
     }
 
-    // Display each stock
     for (const string &stockName : relevantStocks) {
         int quantity = 0;
         auto it = result.finalStocks.find(stockName);
