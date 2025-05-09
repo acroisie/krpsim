@@ -30,7 +30,8 @@ class Simulator {
 
     Simulator(const Config &config, int timeLimit);
 
-    SimulationResult runSimulation(const std::vector<std::string> &processSequence);
+    SimulationResult
+    runSimulation(const std::vector<std::string> &processSequence);
 
     const std::unordered_map<std::string, int> &getProcessPriority() const {
         return processPriority;
@@ -43,6 +44,7 @@ class Simulator {
     std::unordered_map<std::string, int> processPriority;
 
     void buildProcessPriority();
-    bool canStartProcess(const Process *process, const std::map<std::string, int> &stocks) const;
+    bool canStartProcess(const Process *process,
+                         const std::map<std::string, int> &stocks) const;
     const Process *getProcessByName(const std::string &name) const;
 };
