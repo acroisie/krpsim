@@ -37,6 +37,8 @@ class Simulator {
         return processPriority;
     }
 
+    const Process *getProcessByName(const std::string &name) const;
+
   private:
     const Config &config;
     int timeLimit;
@@ -46,5 +48,4 @@ class Simulator {
     void buildProcessPriority();
     bool canStartProcess(const Process *process,
                          const std::map<std::string, int> &stocks) const;
-    const Process *getProcessByName(const std::string &name) const;
 };
