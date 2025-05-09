@@ -3,10 +3,11 @@
 #include "ProcessManager.hpp"
 #include <cstdlib>
 #include <iostream>
+using namespace std;
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <filename> <delay>" << std::endl;
+        cerr << "Usage: " << argv[0] << " <filename> <delay>" << endl;
         return 1;
     }
 
@@ -17,9 +18,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int delay = std::atoi(argv[2]);
+    int delay = atoi(argv[2]);
     if (delay <= 0) {
-        std::cerr << "Error: Delay must be a positive integer." << std::endl;
+        cerr << "Error: Delay must be a positive integer." << endl;
         return 1;
     }
 
