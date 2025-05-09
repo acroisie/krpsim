@@ -43,7 +43,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 
 fclean: clean
-	rm -f krpsim krpsim_verif
+	rm -f krpsim krpsim_verif tracefile.txt
 
 re: fclean all
 
