@@ -36,23 +36,19 @@ void GeneticAlgorithm::updateStocksAfterProcess(
         return;
     }
 
-    // Consume inputs
     for (const auto &[resource, quantity] : process->inputs) {
         stocks[resource] -= quantity;
     }
 
-    // Add outputs
     for (const auto &[resource, quantity] : process->outputs) {
         stocks[resource] += quantity;
     }
 }
 
 Individual GeneticAlgorithm::createSmartIndividual() {
-    // Stock courant
     map<string, int> stocks;
     for (const auto &s : config.getStocks()) stocks[s.name] = s.quantity;
 
-    // map rapide nom ➜ Process
     unordered_map<string, const Process *> pMap;
     for (const auto &p : config.getProcesses()) pMap[p.name] = &p;
 
@@ -66,7 +62,6 @@ Individual GeneticAlgorithm::createSmartIndividual() {
 
         if (executable.empty()) break;
 
-        // choisir le meilleur selon priorité puis nbCycle
         auto best = *min_element(executable.begin(), executable.end(), [&](const Process *a, const Process *b) {
             const auto &prio = simulator.getProcessPriority();
             int pa = prio.count(a->name) ? prio.at(a->name) : 3;
@@ -78,7 +73,6 @@ Individual GeneticAlgorithm::createSmartIndividual() {
         updateStocksAfterProcess(best, stocks);
     }
 
-    // si trop court — on duplique des choix utiles plutôt qu'aléatoires
     if (seq.size() < static_cast<size_t>(minSequenceLength) && !seq.empty()) {
         std::mt19937 &rng = randomGenerator;
         while (seq.size() < static_cast<size_t>(minSequenceLength)) seq.push_back(seq[rng() % seq.size()]);
@@ -107,9 +101,7 @@ void GeneticAlgorithm::initializePopulation() {
     population.clear();
     population.reserve(populationSize);
 
-    // Create a mix of smart and random individuals
-    // Smart individuals will guide the search, random ones maintain diversity
-    int smartCount = populationSize * 0.8; // 80% smart, 20% random
+    int smartCount = populationSize * 0.8;
 
     for (int i = 0; i < smartCount; ++i) {
         population.push_back(createSmartIndividual());
@@ -138,7 +130,6 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         return selectedIndices;
     }
 
-    // Find valid min and max fitness values
     double minFitness = numeric_limits<double>::max();
     double maxFitness = numeric_limits<double>::lowest();
 
@@ -149,10 +140,8 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         }
     }
 
-    // Handle edge cases
     if (minFitness == numeric_limits<double>::max() ||
         maxFitness == numeric_limits<double>::lowest()) {
-        // No valid fitness scores, select randomly
         selectedIndices.reserve(populationSize);
         uniform_int_distribution<size_t> randDist(0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
@@ -161,9 +150,7 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         return selectedIndices;
     }
 
-    // If all fitness values are identical
     if (minFitness == maxFitness) {
-        // Select parents randomly
         selectedIndices.reserve(populationSize);
         uniform_int_distribution<size_t> randDist(0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
@@ -172,14 +159,13 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         return selectedIndices;
     }
 
-    // Normalize fitness scores to positive values
     double range = maxFitness - minFitness;
     vector<double> normalizedFitness;
     normalizedFitness.reserve(population.size());
     double totalNormalizedFitness = 0.0;
 
     for (const auto &individual : population) {
-        double normalized = 0.001; // Minimum score
+        double normalized = 0.001;
         if (isfinite(individual.fitnessScore)) {
             normalized = (individual.fitnessScore - minFitness) / range + 0.001;
         }
@@ -187,9 +173,7 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         totalNormalizedFitness += normalized;
     }
 
-    // Handle invalid total fitness
     if (totalNormalizedFitness <= 0.0 || !isfinite(totalNormalizedFitness)) {
-        // Select parents randomly
         selectedIndices.reserve(populationSize);
         uniform_int_distribution<size_t> randDist(0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
@@ -198,7 +182,6 @@ vector<size_t> GeneticAlgorithm::selectParents() {
         return selectedIndices;
     }
 
-    // Roulette wheel selection
     uniform_real_distribution<> dist(0.0, totalNormalizedFitness);
     selectedIndices.reserve(populationSize);
 
@@ -216,7 +199,6 @@ vector<size_t> GeneticAlgorithm::selectParents() {
             }
         }
 
-        // Fallback if no selection made
         if (!selected && !population.empty()) {
             selectedIndices.push_back(population.size() - 1);
         }
@@ -242,7 +224,6 @@ GeneticAlgorithm::crossover(const Individual &parent1,
         return {parent1, parent2};
     }
 
-    // Two-point crossover
     size_t shortLength = min(len1, len2);
     uniform_int_distribution<size_t> pointDist(0, shortLength - 1);
 
@@ -261,7 +242,6 @@ GeneticAlgorithm::crossover(const Individual &parent1,
     childSeq1.reserve(len1);
     childSeq2.reserve(len2);
 
-    // Create first child
     childSeq1.insert(childSeq1.end(), seq1.begin(), seq1.begin() + point1);
     if (point2 < len2) {
         childSeq1.insert(childSeq1.end(), seq2.begin() + point1,
@@ -273,7 +253,6 @@ GeneticAlgorithm::crossover(const Individual &parent1,
         childSeq1.insert(childSeq1.end(), seq1.begin() + point2, seq1.end());
     }
 
-    // Create second child
     childSeq2.insert(childSeq2.end(), seq2.begin(), seq2.begin() + point1);
     if (point2 < len1) {
         childSeq2.insert(childSeq2.end(), seq1.begin() + point1,
@@ -294,7 +273,6 @@ Individual GeneticAlgorithm::mutate(const Individual &individual) {
     uniform_int_distribution<> processDist(
         0, static_cast<int>(processNames.size()) - 1);
 
-    // Point mutations
     for (size_t i = 0; i < mutated.processSequence.size(); ++i) {
         if (probDist(randomGenerator) < mutationRate) {
             mutated.processSequence[i] =
@@ -302,7 +280,6 @@ Individual GeneticAlgorithm::mutate(const Individual &individual) {
         }
     }
 
-    // Structural mutations (add/remove elements)
     double structuralMutationRate = 0.02;
     if (probDist(randomGenerator) < structuralMutationRate &&
         mutated.processSequence.size() > 1) {
@@ -310,17 +287,14 @@ Individual GeneticAlgorithm::mutate(const Individual &individual) {
             0, mutated.processSequence.size());
         size_t pos = posDist(randomGenerator);
 
-        // 50% chance to remove or add an element
         if (probDist(randomGenerator) < 0.5 &&
             mutated.processSequence.size() >
                 static_cast<size_t>(minSequenceLength)) {
-            // Remove element if we have more than the minimum
             if (pos < mutated.processSequence.size()) {
                 mutated.processSequence.erase(mutated.processSequence.begin() +
                                               pos);
             }
         } else {
-            // Add element
             string randomProcess = processNames[processDist(randomGenerator)];
             if (pos > mutated.processSequence.size()) {
                 pos = mutated.processSequence.size();
@@ -337,19 +311,15 @@ void GeneticAlgorithm::selectNextGeneration() {
     vector<Individual> newPopulation;
     newPopulation.reserve(populationSize);
 
-    // Sort population by fitness (descending)
     sort(population.begin(), population.end());
 
-    // Keep elite individuals
     for (int i = 0; i < eliteCount && i < static_cast<int>(population.size());
          ++i) {
         newPopulation.push_back(population[i]);
     }
 
-    // Select parents for breeding
     vector<size_t> parentIndices = selectParents();
     if (parentIndices.empty() && populationSize > eliteCount) {
-        // If no parents selected, fill with elites or random individuals
         while (newPopulation.size() < static_cast<size_t>(populationSize)) {
             if (!population.empty()) {
                 newPopulation.push_back(population[0]);
@@ -366,7 +336,6 @@ void GeneticAlgorithm::selectNextGeneration() {
         return;
     }
 
-    // Create next generation
     uniform_int_distribution<size_t> parentDist(0, parentIndices.size() - 1);
     while (newPopulation.size() < static_cast<size_t>(populationSize)) {
         size_t idx1 = parentDist(randomGenerator);
@@ -384,7 +353,6 @@ void GeneticAlgorithm::selectNextGeneration() {
             continue;
         }
 
-        // Try to avoid self-crossover
         int tries = 0;
         while (parentIndex1 == parentIndex2 && parentIndices.size() > 1 &&
                tries < 10) {
@@ -437,7 +405,6 @@ Individual GeneticAlgorithm::runEvolution(int generations) {
         evaluatePopulation();
         Individual currentBest = getBestIndividual();
 
-        // Update overall best
         if (gen == 0 || currentBest.fitnessScore > bestOverall.fitnessScore) {
             bestOverall = currentBest;
             cout << "Generation " << (gen + 1) << "/" << generations
@@ -447,7 +414,6 @@ Individual GeneticAlgorithm::runEvolution(int generations) {
         selectNextGeneration();
     }
 
-    // Final evaluation
     evaluatePopulation();
     Individual finalBest = getBestIndividual();
     if (finalBest.fitnessScore > bestOverall.fitnessScore) {

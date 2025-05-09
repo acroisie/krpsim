@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
     Config config;
     if (!parser.parse(config)) return 1;
 
-    TraceVerifier verifier(config);          // limite par défaut 1 000 000 cycles
+    TraceVerifier verifier(config);
     bool ok = verifier.verifyFile(argv[2]);
     return ok ? 0 : 1;
 }

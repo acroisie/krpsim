@@ -24,4 +24,4 @@ namespace StringUtils {
         }
         return elements;
     }
-} // namespace StringUtils
+}
