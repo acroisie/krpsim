@@ -6,9 +6,9 @@
 
 using namespace std;
 
-ProcessManager::ProcessManager(const Config &config, int timeLimit)
-    : config(config), simulator(config, timeLimit),
-      geneticAlgorithm(config, simulator, 100, 0.05, 0.7, 4, 50, 200),
+ProcessManager::ProcessManager(const Config &configRef, int timeLimit)
+    : config(configRef), simulator(configRef, timeLimit),
+      geneticAlgorithm(configRef, simulator, 100, 0.05, 0.7, 4, 50, 200),
       timeLimit(timeLimit) {}
 
 void ProcessManager::run() {
@@ -53,8 +53,8 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
         }
     }
 
-    const char *tracefile_env = std::getenv("KRPSIM_TRACEFILE");
-    std::string tracefile = tracefile_env ? tracefile_env : "tracefile.txt";
+    const char *tracefileEnv = std::getenv("KRPSIM_TRACEFILE");
+    std::string tracefile = tracefileEnv ? tracefileEnv : "tracefile.txt";
     std::ofstream trace(tracefile);
     if (trace.is_open()) {
         for (const auto &[cycle, processName] : result.executionLog) {
@@ -98,9 +98,9 @@ void ProcessManager::generateOutput(const Individual &bestSolution) {
 
     for (const string &stockName : relevantStocks) {
         int quantity = 0;
-        auto it = result.finalStocks.find(stockName);
-        if (it != result.finalStocks.end()) {
-            quantity = it->second;
+        auto stockIt = result.finalStocks.find(stockName);
+        if (stockIt != result.finalStocks.end()) {
+            quantity = stockIt->second;
         }
         cout << "  " << stockName << " => " << quantity << endl;
     }

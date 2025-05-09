@@ -6,23 +6,25 @@
 
 using namespace std;
 
-TraceVerifier::TraceVerifier(const Config &cfg, int limit)
-    : config(cfg), timeLimit(limit) {
-    for (const auto &s : config.getStocks()) stocks[s.name] = s.quantity;
+TraceVerifier::TraceVerifier(const Config &configRef, int timeLimit)
+    : config(configRef), timeLimit(timeLimit) {
+    for (const auto &stock : config.getStocks())
+        stocks[stock.name] = stock.quantity;
 }
 
-bool TraceVerifier::canStart(const Process *p) const {
-    if (!p) return false;
-    for (const auto &[r, q] : p->inputs) {
-        auto it = stocks.find(r);
-        if (it == stocks.end() || it->second < q) return false;
+bool TraceVerifier::canStart(const Process *process) const {
+    if (!process) return false;
+    for (const auto &[resource, quantity] : process->inputs) {
+        auto stockIt = stocks.find(resource);
+        if (stockIt == stocks.end() || stockIt->second < quantity) return false;
     }
     return true;
 }
 
-void TraceVerifier::addOutputs(const Process *p) {
-    if (!p) return;
-    for (const auto &[r, q] : p->outputs) stocks[r] += q;
+void TraceVerifier::addOutputs(const Process *process) {
+    if (!process) return;
+    for (const auto &[resource, quantity] : process->outputs)
+        stocks[resource] += quantity;
 }
 
 void TraceVerifier::finishUntil(int cycle) {
@@ -32,36 +34,39 @@ void TraceVerifier::finishUntil(int cycle) {
     }
 }
 
-bool TraceVerifier::start(int cycle, const Process *p, string &err) {
-    if (!p) {
-        err = "process inconnu";
+bool TraceVerifier::start(int cycle, const Process *process, string &error) {
+    if (!process) {
+        error = "process inconnu";
         return false;
     }
     if (cycle > timeLimit) {
-        err = "dépasse la limite de temps";
+        error = "dépasse la limite de temps";
         return false;
     }
-    if (!canStart(p)) {
-        err = "stock insuffisant";
+    if (!canStart(process)) {
+        error = "stock insuffisant";
         return false;
     }
 
-    for (const auto &[r, q] : p->inputs) stocks[r] -= q;
-    runningQ.push({p, cycle + p->nbCycle});
+    for (const auto &[resource, quantity] : process->inputs)
+        stocks[resource] -= quantity;
+    runningQ.push({process, cycle + process->nbCycle});
     return true;
 }
 
 void TraceVerifier::printStocks(int finalCycle) const {
     cout << "Stock :" << endl;
-    set<string> names;
-    for (const auto &s : config.getStocks()) names.insert(s.name);
-    for (const auto &p : config.getProcesses()) {
-        for (const auto &[r, _] : p.inputs) names.insert(r);
-        for (const auto &[r, _] : p.outputs) names.insert(r);
+    set<string> stockNames;
+    for (const auto &stock : config.getStocks()) stockNames.insert(stock.name);
+    for (const auto &process : config.getProcesses()) {
+        for (const auto &[resource, _] : process.inputs)
+            stockNames.insert(resource);
+        for (const auto &[resource, _] : process.outputs)
+            stockNames.insert(resource);
     }
-    for (const string &n : names)
-        cout << "  " << n << " => " << (stocks.count(n) ? stocks.at(n) : 0)
-             << endl;
+    for (const string &name : stockNames)
+        cout << "  " << name << " => "
+             << (stocks.count(name) ? stocks.at(name) : 0) << endl;
     cout << "----------------------------------------" << endl;
     cout << "Dernier cycle : " << finalCycle << endl;
 }
@@ -74,52 +79,53 @@ bool TraceVerifier::verifyFile(const string &traceFile) {
     }
 
     string line;
-    int prev = 0, last = 0;
-    size_t nline = 0;
+    int previousCycle = 0, lastCycle = 0;
+    size_t lineNumber = 0;
 
     while (getline(file, line)) {
-        ++nline;
+        ++lineNumber;
         line = StringUtils::trim(line);
         if (line.empty() || line[0] == '#') continue;
 
-        size_t col = line.find(':');
-        if (col == string::npos) {
-            cerr << "Syntaxe invalide ligne " << nline << endl;
+        size_t colonIndex = line.find(':');
+        if (colonIndex == string::npos) {
+            cerr << "Syntaxe invalide ligne " << lineNumber << endl;
             return false;
         }
 
-        int cycle = stoi(line.substr(0, col));
-        string name = StringUtils::trim(line.substr(col + 1));
-        if (cycle < prev) {
-            cerr << "Cycles non croissants ligne " << nline << endl;
+        int cycle = stoi(line.substr(0, colonIndex));
+        string processName = StringUtils::trim(line.substr(colonIndex + 1));
+        if (cycle < previousCycle) {
+            cerr << "Cycles non croissants ligne " << lineNumber << endl;
             return false;
         }
 
         finishUntil(cycle);
 
-        const Process *p = nullptr;
-        for (const auto &pr : config.getProcesses())
-            if (pr.name == name) {
-                p = &pr;
+        const Process *processPtr = nullptr;
+        for (const auto &process : config.getProcesses())
+            if (process.name == processName) {
+                processPtr = &process;
                 break;
             }
 
-        string err;
-        if (!start(cycle, p, err)) {
-            cerr << "Erreur ligne " << nline << " (" << cycle << ":" << name
-                 << ") ➜ " << err << endl;
+        string error;
+        if (!start(cycle, processPtr, error)) {
+            cerr << "Erreur ligne " << lineNumber << " (" << cycle << ":"
+                 << processName << ") ➜ " << error << endl;
             return false;
         }
 
-        prev = cycle;
-        last = cycle;
+        previousCycle = cycle;
+        lastCycle = cycle;
     }
 
-    if (!runningQ.empty()) last = max(last, runningQ.top().completionTime);
-    finishUntil(last);
+    if (!runningQ.empty())
+        lastCycle = max(lastCycle, runningQ.top().completionTime);
+    finishUntil(lastCycle);
 
     cout << "Trace vérifiée avec succès." << endl
          << "----------------------------------------" << endl;
-    printStocks(last);
+    printStocks(lastCycle);
     return true;
 }

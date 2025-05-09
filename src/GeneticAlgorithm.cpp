@@ -6,15 +6,19 @@
 
 using namespace std;
 
-GeneticAlgorithm::GeneticAlgorithm(const Config &cfg, Simulator &sim,
-                                   int popSize, double mutRate,
-                                   double crossRate, int elite, int minLen,
-                                   int maxLen)
-    : config(cfg), simulator(sim), populationSize(popSize),
-      mutationRate(mutRate), crossoverRate(crossRate),
-      eliteCount(min(max(0, elite), popSize)), minSequenceLength(minLen),
-      maxSequenceLength(maxLen), randomGenerator(random_device{}()) {
-    for (const auto &p : config.getProcesses()) processNames.push_back(p.name);
+GeneticAlgorithm::GeneticAlgorithm(const Config &configRef,
+                                   Simulator &simulatorRef, int populationSize,
+                                   double mutationRate, double crossoverRate,
+                                   int eliteCount, int minSequenceLength,
+                                   int maxSequenceLength)
+    : config(configRef), simulator(simulatorRef),
+      populationSize(populationSize), mutationRate(mutationRate),
+      crossoverRate(crossoverRate),
+      eliteCount(min(max(0, eliteCount), populationSize)),
+      minSequenceLength(minSequenceLength),
+      maxSequenceLength(maxSequenceLength), randomGenerator(random_device{}()) {
+    for (const auto &process : config.getProcesses())
+        processNames.push_back(process.name);
 }
 
 bool GeneticAlgorithm::canExecuteProcess(
@@ -48,92 +52,104 @@ void GeneticAlgorithm::updateStocksAfterProcess(
 }
 
 Individual GeneticAlgorithm::createSmartIndividual() {
-    map<string, int> stocks;
-    for (const auto &s : config.getStocks()) stocks[s.name] = s.quantity;
+    map<string, int> availableStocks;
+    for (const auto &stock : config.getStocks())
+        availableStocks[stock.name] = stock.quantity;
 
-    unordered_map<string, const Process *> pMap;
-    for (const auto &p : config.getProcesses()) pMap[p.name] = &p;
+    unordered_map<string, const Process *> processMap;
+    for (const auto &process : config.getProcesses())
+        processMap[process.name] = &process;
 
-    vector<string> seq;
+    vector<string> processSequence;
     int attempts = 0;
-    while (seq.size() < (static_cast<size_t>(maxSequenceLength)) &&
+    while (processSequence.size() < (static_cast<size_t>(maxSequenceLength)) &&
            attempts < maxSequenceLength * 2) {
         ++attempts;
-        vector<const Process *> executable;
-        for (const auto &[name, ptr] : pMap)
-            if (canExecuteProcess(ptr, stocks)) executable.push_back(ptr);
+        vector<const Process *> executableProcesses;
+        for (const auto &[name, processPtr] : processMap)
+            if (canExecuteProcess(processPtr, availableStocks))
+                executableProcesses.push_back(processPtr);
 
-        if (executable.empty()) break;
+        if (executableProcesses.empty()) break;
 
-        auto best = *min_element(
-            executable.begin(), executable.end(),
-            [&](const Process *a, const Process *b) {
-                const auto &prio = simulator.getProcessPriority();
-                int pa = prio.count(a->name) ? prio.at(a->name) : 3;
-                int pb = prio.count(b->name) ? prio.at(b->name) : 3;
-                if (pa != pb) return pa < pb;
-                return a->nbCycle < b->nbCycle;
+        auto bestProcess = *min_element(
+            executableProcesses.begin(), executableProcesses.end(),
+            [&](const Process *processA, const Process *processB) {
+                const auto &priorityMap = simulator.getProcessPriority();
+                int priorityA = priorityMap.count(processA->name)
+                                    ? priorityMap.at(processA->name)
+                                    : 3;
+                int priorityB = priorityMap.count(processB->name)
+                                    ? priorityMap.at(processB->name)
+                                    : 3;
+                if (priorityA != priorityB) return priorityA < priorityB;
+                return processA->nbCycle < processB->nbCycle;
             });
-        seq.push_back(best->name);
-        updateStocksAfterProcess(best, stocks);
+        processSequence.push_back(bestProcess->name);
+        updateStocksAfterProcess(bestProcess, availableStocks);
     }
 
-    if (seq.size() < static_cast<size_t>(minSequenceLength) && !seq.empty()) {
+    if (processSequence.size() < static_cast<size_t>(minSequenceLength) &&
+        !processSequence.empty()) {
         std::mt19937 &rng = randomGenerator;
-        while (seq.size() < static_cast<size_t>(minSequenceLength))
-            seq.push_back(seq[rng() % seq.size()]);
+        while (processSequence.size() < static_cast<size_t>(minSequenceLength))
+            processSequence.push_back(
+                processSequence[rng() % processSequence.size()]);
     }
 
-    return Individual(seq);
+    return Individual(processSequence);
 }
 
 Individual GeneticAlgorithm::createRandomIndividual() {
-    uniform_int_distribution<> lengthDist(minSequenceLength, maxSequenceLength);
-    uniform_int_distribution<> processDist(
+    uniform_int_distribution<> lengthDistribution(minSequenceLength,
+                                                  maxSequenceLength);
+    uniform_int_distribution<> processIndexDistribution(
         0, static_cast<int>(processNames.size()) - 1);
 
-    int sequenceLength = lengthDist(randomGenerator);
-    vector<string> sequence;
-    sequence.reserve(sequenceLength);
+    int processSequenceLength = lengthDistribution(randomGenerator);
+    vector<string> processSequence;
+    processSequence.reserve(processSequenceLength);
 
-    for (int i = 0; i < sequenceLength; ++i) {
-        sequence.push_back(processNames[processDist(randomGenerator)]);
+    for (int processIndex = 0; processIndex < processSequenceLength;
+         ++processIndex) {
+        processSequence.push_back(
+            processNames[processIndexDistribution(randomGenerator)]);
     }
 
-    return Individual(sequence);
+    return Individual(processSequence);
 }
 
 void GeneticAlgorithm::initializePopulation() {
     population.clear();
     population.reserve(populationSize);
 
-    int smartCount = populationSize * 0.8;
+    int smartIndividualCount = populationSize * 0.8;
 
-    for (int i = 0; i < smartCount; ++i) {
+    for (int i = 0; i < smartIndividualCount; ++i) {
         population.push_back(createSmartIndividual());
     }
 
-    for (int i = smartCount; i < populationSize; ++i) {
+    for (int i = smartIndividualCount; i < populationSize; ++i) {
         population.push_back(createRandomIndividual());
     }
 
     cout << "Population initialized with " << populationSize
-         << " individuals: " << smartCount << " smart, "
-         << (populationSize - smartCount) << " random." << endl;
+         << " individuals: " << smartIndividualCount << " smart, "
+         << (populationSize - smartIndividualCount) << " random." << endl;
 }
 
 void GeneticAlgorithm::evaluatePopulation() {
     for (auto &individual : population) {
-        Simulator::SimulationResult result =
+        Simulator::SimulationResult simulationResult =
             simulator.runSimulation(individual.processSequence);
-        individual.fitnessScore = result.fitness;
+        individual.fitnessScore = simulationResult.fitness;
     }
 }
 
 vector<size_t> GeneticAlgorithm::selectParents() {
-    vector<size_t> selectedIndices;
+    vector<size_t> selectedParentIndices;
     if (population.empty()) {
-        return selectedIndices;
+        return selectedParentIndices;
     }
 
     double minFitness = numeric_limits<double>::max();
@@ -148,24 +164,28 @@ vector<size_t> GeneticAlgorithm::selectParents() {
 
     if (minFitness == numeric_limits<double>::max() ||
         maxFitness == numeric_limits<double>::lowest()) {
-        selectedIndices.reserve(populationSize);
-        uniform_int_distribution<size_t> randDist(0, population.size() - 1);
+        selectedParentIndices.reserve(populationSize);
+        uniform_int_distribution<size_t> randomIndexDistribution(
+            0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
-            selectedIndices.push_back(randDist(randomGenerator));
+            selectedParentIndices.push_back(
+                randomIndexDistribution(randomGenerator));
         }
-        return selectedIndices;
+        return selectedParentIndices;
     }
 
     if (minFitness == maxFitness) {
-        selectedIndices.reserve(populationSize);
-        uniform_int_distribution<size_t> randDist(0, population.size() - 1);
+        selectedParentIndices.reserve(populationSize);
+        uniform_int_distribution<size_t> randomIndexDistribution(
+            0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
-            selectedIndices.push_back(randDist(randomGenerator));
+            selectedParentIndices.push_back(
+                randomIndexDistribution(randomGenerator));
         }
-        return selectedIndices;
+        return selectedParentIndices;
     }
 
-    double range = maxFitness - minFitness;
+    double fitnessRange = maxFitness - minFitness;
     vector<double> normalizedFitness;
     normalizedFitness.reserve(population.size());
     double totalNormalizedFitness = 0.0;
@@ -173,144 +193,166 @@ vector<size_t> GeneticAlgorithm::selectParents() {
     for (const auto &individual : population) {
         double normalized = 0.001;
         if (isfinite(individual.fitnessScore)) {
-            normalized = (individual.fitnessScore - minFitness) / range + 0.001;
+            normalized =
+                (individual.fitnessScore - minFitness) / fitnessRange + 0.001;
         }
         normalizedFitness.push_back(normalized);
         totalNormalizedFitness += normalized;
     }
 
     if (totalNormalizedFitness <= 0.0 || !isfinite(totalNormalizedFitness)) {
-        selectedIndices.reserve(populationSize);
-        uniform_int_distribution<size_t> randDist(0, population.size() - 1);
+        selectedParentIndices.reserve(populationSize);
+        uniform_int_distribution<size_t> randomIndexDistribution(
+            0, population.size() - 1);
         for (int i = 0; i < populationSize; ++i) {
-            selectedIndices.push_back(randDist(randomGenerator));
+            selectedParentIndices.push_back(
+                randomIndexDistribution(randomGenerator));
         }
-        return selectedIndices;
+        return selectedParentIndices;
     }
 
-    uniform_real_distribution<> dist(0.0, totalNormalizedFitness);
-    selectedIndices.reserve(populationSize);
+    uniform_real_distribution<> randomFitnessDistribution(
+        0.0, totalNormalizedFitness);
+    selectedParentIndices.reserve(populationSize);
 
     for (int i = 0; i < populationSize; ++i) {
-        double randomPoint = dist(randomGenerator);
+        double randomPoint = randomFitnessDistribution(randomGenerator);
         double currentSum = 0.0;
-        bool selected = false;
+        bool parentSelected = false;
 
-        for (size_t j = 0; j < population.size(); ++j) {
-            currentSum += normalizedFitness[j];
+        for (size_t index = 0; index < population.size(); ++index) {
+            currentSum += normalizedFitness[index];
             if (randomPoint <= currentSum) {
-                selectedIndices.push_back(j);
-                selected = true;
+                selectedParentIndices.push_back(index);
+                parentSelected = true;
                 break;
             }
         }
 
-        if (!selected && !population.empty()) {
-            selectedIndices.push_back(population.size() - 1);
+        if (!parentSelected && !population.empty()) {
+            selectedParentIndices.push_back(population.size() - 1);
         }
     }
 
-    return selectedIndices;
+    return selectedParentIndices;
 }
 
 pair<Individual, Individual>
 GeneticAlgorithm::crossover(const Individual &parent1,
                             const Individual &parent2) {
-    uniform_real_distribution<> crossDist(0.0, 1.0);
-    if (crossDist(randomGenerator) > crossoverRate) {
+    uniform_real_distribution<> crossoverProbabilityDistribution(0.0, 1.0);
+    if (crossoverProbabilityDistribution(randomGenerator) > crossoverRate) {
         return {parent1, parent2};
     }
 
-    const auto &seq1 = parent1.processSequence;
-    const auto &seq2 = parent2.processSequence;
-    size_t len1 = seq1.size();
-    size_t len2 = seq2.size();
+    const auto &sequence1 = parent1.processSequence;
+    const auto &sequence2 = parent2.processSequence;
+    size_t length1 = sequence1.size();
+    size_t length2 = sequence2.size();
 
-    if (len1 < 2 || len2 < 2) {
+    if (length1 < 2 || length2 < 2) {
         return {parent1, parent2};
     }
 
-    size_t shortLength = min(len1, len2);
-    uniform_int_distribution<size_t> pointDist(0, shortLength - 1);
+    size_t shortestLength = min(length1, length2);
+    uniform_int_distribution<size_t> crossoverPointDistribution(
+        0, shortestLength - 1);
 
-    size_t point1 = pointDist(randomGenerator);
-    size_t point2 = pointDist(randomGenerator);
+    size_t crossoverPoint1 = crossoverPointDistribution(randomGenerator);
+    size_t crossoverPoint2 = crossoverPointDistribution(randomGenerator);
 
-    if (point1 == point2) {
-        point2 = (point1 + 1) % shortLength;
+    if (crossoverPoint1 == crossoverPoint2) {
+        crossoverPoint2 = (crossoverPoint1 + 1) % shortestLength;
     }
 
-    if (point1 > point2) {
-        swap(point1, point2);
+    if (crossoverPoint1 > crossoverPoint2) {
+        swap(crossoverPoint1, crossoverPoint2);
     }
 
-    vector<string> childSeq1, childSeq2;
-    childSeq1.reserve(len1);
-    childSeq2.reserve(len2);
+    vector<string> childSequence1, childSequence2;
+    childSequence1.reserve(length1);
+    childSequence2.reserve(length2);
 
-    childSeq1.insert(childSeq1.end(), seq1.begin(), seq1.begin() + point1);
-    if (point2 < len2) {
-        childSeq1.insert(childSeq1.end(), seq2.begin() + point1,
-                         seq2.begin() + point2);
-    } else if (point1 < len2) {
-        childSeq1.insert(childSeq1.end(), seq2.begin() + point1, seq2.end());
+    childSequence1.insert(childSequence1.end(), sequence1.begin(),
+                          sequence1.begin() + crossoverPoint1);
+    if (crossoverPoint2 < length2) {
+        childSequence1.insert(childSequence1.end(),
+                              sequence2.begin() + crossoverPoint1,
+                              sequence2.begin() + crossoverPoint2);
+    } else if (crossoverPoint1 < length2) {
+        childSequence1.insert(childSequence1.end(),
+                              sequence2.begin() + crossoverPoint1,
+                              sequence2.end());
     }
-    if (point2 < len1) {
-        childSeq1.insert(childSeq1.end(), seq1.begin() + point2, seq1.end());
-    }
-
-    childSeq2.insert(childSeq2.end(), seq2.begin(), seq2.begin() + point1);
-    if (point2 < len1) {
-        childSeq2.insert(childSeq2.end(), seq1.begin() + point1,
-                         seq1.begin() + point2);
-    } else if (point1 < len1) {
-        childSeq2.insert(childSeq2.end(), seq1.begin() + point1, seq1.end());
-    }
-    if (point2 < len2) {
-        childSeq2.insert(childSeq2.end(), seq2.begin() + point2, seq2.end());
+    if (crossoverPoint2 < length1) {
+        childSequence1.insert(childSequence1.end(),
+                              sequence1.begin() + crossoverPoint2,
+                              sequence1.end());
     }
 
-    return {Individual(childSeq1), Individual(childSeq2)};
+    childSequence2.insert(childSequence2.end(), sequence2.begin(),
+                          sequence2.begin() + crossoverPoint1);
+    if (crossoverPoint2 < length1) {
+        childSequence2.insert(childSequence2.end(),
+                              sequence1.begin() + crossoverPoint1,
+                              sequence1.begin() + crossoverPoint2);
+    } else if (crossoverPoint1 < length1) {
+        childSequence2.insert(childSequence2.end(),
+                              sequence1.begin() + crossoverPoint1,
+                              sequence1.end());
+    }
+    if (crossoverPoint2 < length2) {
+        childSequence2.insert(childSequence2.end(),
+                              sequence2.begin() + crossoverPoint2,
+                              sequence2.end());
+    }
+
+    return {Individual(childSequence1), Individual(childSequence2)};
 }
 
 Individual GeneticAlgorithm::mutate(const Individual &individual) {
-    Individual mutated = individual;
-    uniform_real_distribution<> probDist(0.0, 1.0);
-    uniform_int_distribution<> processDist(
+    Individual mutatedIndividual = individual;
+    uniform_real_distribution<> mutationProbabilityDistribution(0.0, 1.0);
+    uniform_int_distribution<> processIndexDistribution(
         0, static_cast<int>(processNames.size()) - 1);
 
-    for (size_t i = 0; i < mutated.processSequence.size(); ++i) {
-        if (probDist(randomGenerator) < mutationRate) {
-            mutated.processSequence[i] =
-                processNames[processDist(randomGenerator)];
+    for (size_t processIndex = 0;
+         processIndex < mutatedIndividual.processSequence.size();
+         ++processIndex) {
+        if (mutationProbabilityDistribution(randomGenerator) < mutationRate) {
+            mutatedIndividual.processSequence[processIndex] =
+                processNames[processIndexDistribution(randomGenerator)];
         }
     }
 
     double structuralMutationRate = 0.02;
-    if (probDist(randomGenerator) < structuralMutationRate &&
-        mutated.processSequence.size() > 1) {
-        uniform_int_distribution<size_t> posDist(
-            0, mutated.processSequence.size());
-        size_t pos = posDist(randomGenerator);
+    if (mutationProbabilityDistribution(randomGenerator) <
+            structuralMutationRate &&
+        mutatedIndividual.processSequence.size() > 1) {
+        uniform_int_distribution<size_t> positionDistribution(
+            0, mutatedIndividual.processSequence.size());
+        size_t position = positionDistribution(randomGenerator);
 
-        if (probDist(randomGenerator) < 0.5 &&
-            mutated.processSequence.size() >
+        if (mutationProbabilityDistribution(randomGenerator) < 0.5 &&
+            mutatedIndividual.processSequence.size() >
                 static_cast<size_t>(minSequenceLength)) {
-            if (pos < mutated.processSequence.size()) {
-                mutated.processSequence.erase(mutated.processSequence.begin() +
-                                              pos);
+            if (position < mutatedIndividual.processSequence.size()) {
+                mutatedIndividual.processSequence.erase(
+                    mutatedIndividual.processSequence.begin() + position);
             }
         } else {
-            string randomProcess = processNames[processDist(randomGenerator)];
-            if (pos > mutated.processSequence.size()) {
-                pos = mutated.processSequence.size();
+            string randomProcess =
+                processNames[processIndexDistribution(randomGenerator)];
+            if (position > mutatedIndividual.processSequence.size()) {
+                position = mutatedIndividual.processSequence.size();
             }
-            mutated.processSequence.insert(
-                mutated.processSequence.begin() + pos, randomProcess);
+            mutatedIndividual.processSequence.insert(
+                mutatedIndividual.processSequence.begin() + position,
+                randomProcess);
         }
     }
 
-    return mutated;
+    return mutatedIndividual;
 }
 
 void GeneticAlgorithm::selectNextGeneration() {
@@ -342,17 +384,18 @@ void GeneticAlgorithm::selectNextGeneration() {
         return;
     }
 
-    uniform_int_distribution<size_t> parentDist(0, parentIndices.size() - 1);
+    uniform_int_distribution<size_t> parentIndexDistribution(
+        0, parentIndices.size() - 1);
     while (newPopulation.size() < static_cast<size_t>(populationSize)) {
-        size_t idx1 = parentDist(randomGenerator);
-        size_t idx2 = parentDist(randomGenerator);
+        size_t index1 = parentIndexDistribution(randomGenerator);
+        size_t index2 = parentIndexDistribution(randomGenerator);
 
-        if (idx1 >= parentIndices.size() || idx2 >= parentIndices.size()) {
+        if (index1 >= parentIndices.size() || index2 >= parentIndices.size()) {
             continue;
         }
 
-        size_t parentIndex1 = parentIndices[idx1];
-        size_t parentIndex2 = parentIndices[idx2];
+        size_t parentIndex1 = parentIndices[index1];
+        size_t parentIndex2 = parentIndices[index2];
 
         if (parentIndex1 >= population.size() ||
             parentIndex2 >= population.size()) {
@@ -362,9 +405,9 @@ void GeneticAlgorithm::selectNextGeneration() {
         int tries = 0;
         while (parentIndex1 == parentIndex2 && parentIndices.size() > 1 &&
                tries < 10) {
-            idx2 = parentDist(randomGenerator);
-            if (idx2 >= parentIndices.size()) continue;
-            parentIndex2 = parentIndices[idx2];
+            index2 = parentIndexDistribution(randomGenerator);
+            if (index2 >= parentIndices.size()) continue;
+            parentIndex2 = parentIndices[index2];
             if (parentIndex2 >= population.size()) continue;
             tries++;
         }
@@ -407,13 +450,14 @@ Individual GeneticAlgorithm::runEvolution(int generations) {
     Individual bestOverall;
     bestOverall.fitnessScore = numeric_limits<double>::lowest();
 
-    for (int gen = 0; gen < generations; ++gen) {
+    for (int generation = 0; generation < generations; ++generation) {
         evaluatePopulation();
         Individual currentBest = getBestIndividual();
 
-        if (gen == 0 || currentBest.fitnessScore > bestOverall.fitnessScore) {
+        if (generation == 0 ||
+            currentBest.fitnessScore > bestOverall.fitnessScore) {
             bestOverall = currentBest;
-            cout << "Generation " << (gen + 1) << "/" << generations
+            cout << "Generation " << (generation + 1) << "/" << generations
                  << " - New Best Fitness: " << bestOverall.fitnessScore << endl;
         }
 
