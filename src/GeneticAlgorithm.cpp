@@ -6,12 +6,14 @@
 
 using namespace std;
 
-GeneticAlgorithm::GeneticAlgorithm(const Config &cfg, Simulator &sim, int popSize,
-                                   double mutRate, double crossRate, int elite,
-                                   int minLen, int maxLen)
-    : config(cfg), simulator(sim), populationSize(popSize), mutationRate(mutRate),
-      crossoverRate(crossRate), eliteCount(min(max(0, elite), popSize)),
-      minSequenceLength(minLen), maxSequenceLength(maxLen), randomGenerator(random_device{}()) {
+GeneticAlgorithm::GeneticAlgorithm(const Config &cfg, Simulator &sim,
+                                   int popSize, double mutRate,
+                                   double crossRate, int elite, int minLen,
+                                   int maxLen)
+    : config(cfg), simulator(sim), populationSize(popSize),
+      mutationRate(mutRate), crossoverRate(crossRate),
+      eliteCount(min(max(0, elite), popSize)), minSequenceLength(minLen),
+      maxSequenceLength(maxLen), randomGenerator(random_device{}()) {
     for (const auto &p : config.getProcesses()) processNames.push_back(p.name);
 }
 
@@ -54,7 +56,8 @@ Individual GeneticAlgorithm::createSmartIndividual() {
 
     vector<string> seq;
     int attempts = 0;
-    while (seq.size() <(static_cast<size_t>(maxSequenceLength)) && attempts < maxSequenceLength * 2) {
+    while (seq.size() < (static_cast<size_t>(maxSequenceLength)) &&
+           attempts < maxSequenceLength * 2) {
         ++attempts;
         vector<const Process *> executable;
         for (const auto &[name, ptr] : pMap)
@@ -62,20 +65,23 @@ Individual GeneticAlgorithm::createSmartIndividual() {
 
         if (executable.empty()) break;
 
-        auto best = *min_element(executable.begin(), executable.end(), [&](const Process *a, const Process *b) {
-            const auto &prio = simulator.getProcessPriority();
-            int pa = prio.count(a->name) ? prio.at(a->name) : 3;
-            int pb = prio.count(b->name) ? prio.at(b->name) : 3;
-            if (pa != pb) return pa < pb;
-            return a->nbCycle < b->nbCycle;
-        });
+        auto best = *min_element(
+            executable.begin(), executable.end(),
+            [&](const Process *a, const Process *b) {
+                const auto &prio = simulator.getProcessPriority();
+                int pa = prio.count(a->name) ? prio.at(a->name) : 3;
+                int pb = prio.count(b->name) ? prio.at(b->name) : 3;
+                if (pa != pb) return pa < pb;
+                return a->nbCycle < b->nbCycle;
+            });
         seq.push_back(best->name);
         updateStocksAfterProcess(best, stocks);
     }
 
     if (seq.size() < static_cast<size_t>(minSequenceLength) && !seq.empty()) {
         std::mt19937 &rng = randomGenerator;
-        while (seq.size() < static_cast<size_t>(minSequenceLength)) seq.push_back(seq[rng() % seq.size()]);
+        while (seq.size() < static_cast<size_t>(minSequenceLength))
+            seq.push_back(seq[rng() % seq.size()]);
     }
 
     return Individual(seq);

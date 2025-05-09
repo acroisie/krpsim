@@ -1,8 +1,8 @@
 #pragma once
 #include "Config.hpp"
 #include "Process.hpp"
-#include <queue>
 #include <map>
+#include <queue>
 #include <set>
 #include <string>
 
@@ -23,8 +23,7 @@ class TraceVerifier {
             return completionTime > o.completionTime;
         }
     };
-    std::priority_queue<RunningProcess,
-                        std::vector<RunningProcess>,
+    std::priority_queue<RunningProcess, std::vector<RunningProcess>,
                         std::greater<RunningProcess>>
         runningQ;
 
