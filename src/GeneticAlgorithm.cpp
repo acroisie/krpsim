@@ -1,7 +1,9 @@
 #include "GeneticAlgorithm.hpp"
 #include <algorithm>
 #include <iostream>
+#include <mutex>
 #include <numeric>
+#include <thread>
 #include <unordered_map>
 using namespace std;
 
@@ -108,9 +110,27 @@ void GeneticAlgorithm::initializePopulation() {
 }
 
 void GeneticAlgorithm::evaluatePopulation() {
-    for (auto &individual : population)
-        individual.fitnessScore =
-            simulator.runSimulation(individual.processSequence).fitness;
+    size_t n = population.size();
+    unsigned int nThreads = std::thread::hardware_concurrency();
+    if (nThreads == 0) nThreads = 4;
+    std::vector<std::thread> threads;
+    std::mutex popMutex;
+    auto eval = [&](size_t start, size_t end) {
+        for (size_t i = start; i < end; ++i) {
+            double fit =
+                simulator.runSimulation(population[i].processSequence).fitness;
+            std::lock_guard<std::mutex> lock(popMutex);
+            population[i].fitnessScore = fit;
+        }
+    };
+    size_t batch = (n + nThreads - 1) / nThreads;
+    for (unsigned int t = 0; t < nThreads; ++t) {
+        size_t start = t * batch;
+        size_t end = std::min(n, (t + 1) * batch);
+        if (start >= end) break;
+        threads.emplace_back(eval, start, end);
+    }
+    for (auto &th : threads) th.join();
 }
 
 vector<size_t> GeneticAlgorithm::selectParents() {
@@ -147,7 +167,8 @@ vector<size_t> GeneticAlgorithm::selectParents() {
                 break;
             }
         }
-        if (selected.size() <= i) selected.push_back(population.size() - 1);
+        if (selected.size() <= static_cast<size_t>(i))
+            selected.push_back(population.size() - 1);
     }
     return selected;
 }
